@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import PchipInterpolator  # ✅ spline estable (monótono)
 from scipy.integrate import simpson, trapezoid
 import json
 import warnings
@@ -13,8 +13,19 @@ warnings.filterwarnings('ignore')
 class CalculadorVolumenArea:
     """Clase para calcular volumen y área de una gota como figura de revolución."""
 
-    def __init__(self, df):
+    # ----------------------------------------------------------
+    # --- INICIALIZACIÓN ---
+    # ----------------------------------------------------------
+    def __init__(self, df, scale=1.0, n_puntos=1000, suavizado=0.1):
+        """
+        df: DataFrame con columnas ['Imagen', 'Tiempo (s)', 'Contorno_x', 'Contorno_y']
+        scale: factor de conversión (mm/px o m/px)
+        n_puntos: número de puntos para la integración
+        """
         self.df = df
+        self.scale = scale
+        self.n_puntos = n_puntos
+        self.suavizado = suavizado
         self.resultados = []
 
     # ----------------------------------------------------------
@@ -34,18 +45,21 @@ class CalculadorVolumenArea:
         mitad_izq = np.column_stack([contorno_x[mask_izq], contorno_y[mask_izq]])
         mitad_der = np.column_stack([contorno_x[mask_der], contorno_y[mask_der]])
 
+        # ✅ Devuelve la mitad con más puntos (generalmente derecha)
         if len(mitad_der) > len(mitad_izq):
             return mitad_der[:, 0], mitad_der[:, 1]
         else:
             return mitad_izq[:, 0], mitad_izq[:, 1]
 
+    # ✅ spline más estable: PCHIP evita sobreoscilaciones
     def ajustar_spline(self, x, y):
-        """Ajusta un spline al contorno."""
+        """Ajuste con interpolación monótona PCHIP (sin sobreoscilaciones)."""
         if len(x) < 4:
             return None
 
         idx = np.argsort(y)
-        x, y = x[idx], y[idx]
+        y = y[idx]
+        x = x[idx]
 
         y_unique, indices = np.unique(y, return_index=True)
         x_unique = x[indices]
@@ -54,84 +68,81 @@ class CalculadorVolumenArea:
             return None
 
         try:
-            spline = UnivariateSpline(y_unique, x_unique, s=len(y_unique) * 0.1)
+            spline = PchipInterpolator(y_unique, x_unique, extrapolate=False)
             return spline
-        except:
+        except Exception:
             return None
 
-    def ajustar_polinomio(self, x, y, grado=4):
-        """Ajusta un polinomio al contorno."""
-        if len(x) <= grado:
+    def ajustar_polinomio(self, x, y, grado=3):
+        """Ajusta un polinomio con y normalizado para evitar mal condicionamiento."""
+        if len(x) <= grado + 1:
             return None
+        idx = np.argsort(y)
+        x, y = x[idx], y[idx]
+        y_mean, y_std = np.mean(y), np.std(y)
+        if y_std == 0:
+            return None
+        y_norm = (y - y_mean) / y_std
         try:
-            idx = np.argsort(y)
-            x, y = x[idx], y[idx]
-            coef = np.polyfit(y, x, grado)
-            return np.poly1d(coef)
-        except:
+            coef = np.polyfit(y_norm, x, grado)
+            poly = np.poly1d(coef)
+            return lambda yy: poly((yy - y_mean) / y_std)
+        except Exception:
             return None
 
     # ----------------------------------------------------------
-    # --- CÁLCULO DE VOLÚMENES ---
+    # --- FUNCIONES DE CÁLCULO ---
     # ----------------------------------------------------------
-    def volumen_por_revolucion_trapecio(self, funcion, y_min, y_max, n_puntos=1000):
-        y_eval = np.linspace(y_min, y_max, n_puntos)
-        x_eval = np.maximum(funcion(y_eval), 0.0)
+    def _eval_seguro(self, funcion, y_eval):
+        """Evalúa la función asegurando valores válidos (sin negativos, NaN, inf)."""
+        x = np.nan_to_num(funcion(y_eval), nan=0.0, posinf=0.0, neginf=0.0)
+        return np.maximum(x, 0.0)
+
+    def volumen_por_revolucion_trapecio(self, funcion, y_min, y_max, n_puntos=None):
+        n = n_puntos or self.n_puntos
+        y_eval = np.linspace(y_min, y_max, n)
+        x_eval = self._eval_seguro(funcion, y_eval)
         integrando = np.pi * x_eval**2
         volumen = trapezoid(integrando, y_eval)
         return volumen, 0.0
 
-    def volumen_por_revolucion_simpson(self, funcion, y_min, y_max, n_puntos=1000):
-        y_eval = np.linspace(y_min, y_max, n_puntos)
-        x_eval = np.maximum(funcion(y_eval), 0.0)
+    def volumen_por_revolucion_simpson(self, funcion, y_min, y_max, n_puntos=None):
+        n = n_puntos or self.n_puntos
+        y_eval = np.linspace(y_min, y_max, n)
+        x_eval = self._eval_seguro(funcion, y_eval)
         integrando = np.pi * x_eval**2
         volumen = simpson(integrando, y_eval)
         return volumen, 0.0
 
-    # ----------------------------------------------------------
-    # --- CÁLCULO DE ÁREAS (CORREGIDAS) ---
-    # ----------------------------------------------------------
-    def area_superficial_trapecio(self, funcion, derivada, y_mitad, n_puntos=1000):
-        """
-        Cálculo robusto del área superficial con spline:
-        - Evalúa solo dentro del rango real del contorno.
-        - Fuerza radios positivos (x >= 0).
-        - Si el resultado es negativo, lo reemplaza por 0.
-        """
-        y_eval = np.linspace(np.min(y_mitad), np.max(y_mitad), n_puntos)
-        x_eval = np.maximum(np.nan_to_num(funcion(y_eval), nan=0.0, posinf=0.0, neginf=0.0), 0.0)
+    def area_superficial_trapecio(self, funcion, derivada, y_min, y_max, n_puntos=None):
+        n = n_puntos or self.n_puntos
+        y_eval = np.linspace(y_min, y_max, n)
+        x_eval = self._eval_seguro(funcion, y_eval)
 
         if derivada is None:
             dy = y_eval[1] - y_eval[0]
             dx_dy = np.gradient(x_eval, dy)
         else:
-            dx_dy = np.nan_to_num(derivada(y_eval), nan=0.0, posinf=0.0, neginf=0.0)
+            dx_dy = np.nan_to_num(derivada(y_eval), nan=0.0)
 
         integrando = 2 * np.pi * x_eval * np.sqrt(1 + dx_dy**2)
         area = trapezoid(integrando, y_eval)
+        return max(area, 0.0)
 
-        if area < 0:
-            print("⚠️  Área spline negativa → ajustada a 0.0")
-            area = 0.0
-
-        return area
-
-    def area_superficial_simpson(self, funcion, derivada, y_min, y_max, n_puntos=1000):
-        """Cálculo normal de área con Simpson (ya corregido con radios positivos)."""
-        y_eval = np.linspace(y_min, y_max, n_puntos)
-        x_eval = np.maximum(np.nan_to_num(funcion(y_eval), nan=0.0, posinf=0.0, neginf=0.0), 0.0)
+    def area_superficial_simpson(self, funcion, derivada, y_min, y_max, n_puntos=None):
+        n = n_puntos or self.n_puntos
+        y_eval = np.linspace(y_min, y_max, n)
+        x_eval = self._eval_seguro(funcion, y_eval)
 
         if derivada is None:
             dy = y_eval[1] - y_eval[0]
             dx_dy = np.gradient(x_eval, dy)
         else:
-            dx_dy = np.nan_to_num(derivada(y_eval), nan=0.0, posinf=0.0, neginf=0.0)
+            dx_dy = np.nan_to_num(derivada(y_eval), nan=0.0)
 
         integrando = 2 * np.pi * x_eval * np.sqrt(1 + dx_dy**2)
         area = simpson(integrando, y_eval)
-        if area < 0:
-            area = 0.0
-        return area
+        return max(area, 0.0)
 
     # ----------------------------------------------------------
     # --- PROCESAMIENTO DE TODOS LOS FRAMES ---
@@ -140,8 +151,8 @@ class CalculadorVolumenArea:
         print("Procesando volúmenes y áreas para todos los frames...")
         for idx, row in self.df.iterrows():
             try:
-                contorno_x = np.array(json.loads(row['Contorno_x']))
-                contorno_y = np.array(json.loads(row['Contorno_y']))
+                contorno_x = self.scale * np.array(json.loads(row['Contorno_x']))
+                contorno_y = self.scale * np.array(json.loads(row['Contorno_y']))
                 if len(contorno_x) < 10:
                     continue
 
@@ -150,7 +161,7 @@ class CalculadorVolumenArea:
                     continue
 
                 spline = self.ajustar_spline(x_mitad, y_mitad)
-                polinomio = self.ajustar_polinomio(x_mitad, y_mitad, grado=4)
+                polinomio = self.ajustar_polinomio(x_mitad, y_mitad, grado=3)
 
                 resultados_frame = {
                     'Imagen': row['Imagen'],
@@ -165,14 +176,16 @@ class CalculadorVolumenArea:
                     'Area_poly_simpson': np.nan
                 }
 
+                # --- SPLINE ---
                 if spline is not None:
-                    y_min, y_max = np.min(y_mitad), np.max(y_mitad)
+                    y_knots = spline.x  # rango válido del PCHIP
+                    y_min, y_max = np.min(y_knots), np.max(y_knots)
 
                     vol_trap, _ = self.volumen_por_revolucion_trapecio(spline, y_min, y_max)
                     vol_simp, _ = self.volumen_por_revolucion_simpson(spline, y_min, y_max)
 
                     derivada_spline = spline.derivative()
-                    area_trap = self.area_superficial_trapecio(spline, derivada_spline, y_mitad)
+                    area_trap = self.area_superficial_trapecio(spline, derivada_spline, y_min, y_max)
                     area_simp = self.area_superficial_simpson(spline, derivada_spline, y_min, y_max)
 
                     resultados_frame.update({
@@ -182,14 +195,16 @@ class CalculadorVolumenArea:
                         'Area_spline_simpson': area_simp
                     })
 
+                # --- POLINOMIO ---
                 if polinomio is not None:
                     y_min, y_max = np.min(y_mitad), np.max(y_mitad)
                     vol_trap, _ = self.volumen_por_revolucion_trapecio(polinomio, y_min, y_max)
                     vol_simp, _ = self.volumen_por_revolucion_simpson(polinomio, y_min, y_max)
-                    coef_deriv = np.polyder(polinomio.coef)
-                    polinomio_deriv = np.poly1d(coef_deriv)
-                    area_trap = self.area_superficial_trapecio(polinomio, polinomio_deriv, y_mitad)
-                    area_simp = self.area_superficial_simpson(polinomio, polinomio_deriv, y_min, y_max)
+
+                    dy = y_max - y_min
+                    derivada_poly = lambda yy: np.gradient(polinomio(yy), yy)
+                    area_trap = self.area_superficial_trapecio(polinomio, derivada_poly, y_min, y_max)
+                    area_simp = self.area_superficial_simpson(polinomio, derivada_poly, y_min, y_max)
 
                     resultados_frame.update({
                         'Volumen_poly_trapecio': vol_trap,
@@ -220,30 +235,36 @@ class CalculadorVolumenArea:
             return
 
         print(f"Frames analizados: {len(df_validos)}")
+
+        def rel_diff_sym(a, b):
+            denom = (abs(a) + abs(b)) / 2
+            return abs(a - b) / denom * 100 if denom > 0 else np.nan
+
         vol_spline = df_validos['Volumen_spline_trapecio'].mean()
         vol_poly = df_validos['Volumen_poly_trapecio'].mean()
+        diff = rel_diff_sym(vol_spline, vol_poly)
+
         print(f"Spline (Trapecio): {vol_spline:.3e}  |  Polinomio (Trapecio): {vol_poly:.3e}")
-        diff = abs(vol_spline - vol_poly) / vol_spline * 100
         print(f"Diferencia promedio: {diff:.2f}%")
 
         area_spline = df_validos['Area_spline_trapecio'].mean()
         area_poly = df_validos['Area_poly_trapecio'].mean()
+        diff_area = rel_diff_sym(area_spline, area_poly)
         print(f"\nÁrea promedio Spline: {area_spline:.3e}  |  Polinomio: {area_poly:.3e}")
-        diff_area = abs(area_spline - area_poly) / area_spline * 100
         print(f"Diferencia promedio de área: {diff_area:.2f}%")
 
-        print("\nMétodo más confiable: SPLINE + SIMPSON (por suavidad y estabilidad)")
+        print("\nMétodo más confiable: SPLINE (PCHIP) + SIMPSON (por estabilidad y suavidad)")
 
 # ----------------------------------------------------------
 # --- FUNCIÓN PRINCIPAL ---
 # ----------------------------------------------------------
-def generar_informe1():
+def generar_informe1(scale=1.0):
     print("=== EJERCICIO 1 TP5 - CÁLCULO DE VOLUMEN Y ÁREA ===")
     try:
         df = pd.read_excel('resultados_completos.xlsx', sheet_name='Datos Completos')
         print(f"Datos cargados: {len(df)} frames")
 
-        calculador = CalculadorVolumenArea(df)
+        calculador = CalculadorVolumenArea(df, scale=scale)
         df_res = calculador.procesar_todos_frames()
         calculador.generar_analisis_comparativo(df_res)
 
