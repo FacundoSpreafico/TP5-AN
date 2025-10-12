@@ -156,28 +156,20 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50, tol_centroide_um=1.
                     dxdy_izq = np.asarray(dxdy_izq, dtype=float)
 
                     if np.any(np.isfinite(dxdy_izq)):
-                        finite_mask = np.isfinite(dxdy_izq)
-                        slopes = dxdy_izq[finite_mask]
-                        y_sel = y_eval[finite_mask]
+                        valid_vals = dxdy_izq[np.isfinite(dxdy_izq)]
+                        median = np.median(valid_vals)
+                        mad = np.median(np.abs(valid_vals - median))
+                        mask = np.abs(valid_vals - median) < 2.0 * mad
 
-                        # Filtro robusto (MAD) sobre pendientes
-                        median = np.median(slopes)
-                        mad = np.median(np.abs(slopes - median))
-                        if mad == 0:
-                            keep = np.ones_like(slopes, dtype=bool)
-                        else:
-                            keep = np.abs(slopes - median) < 2.0 * mad
+                        if np.any(mask):
+                            weights = np.exp(-y_eval[np.isfinite(dxdy_izq)][mask] / altura_contacto)
 
-                        if np.any(keep):
-                            slopes_k = slopes[keep]
-                            y_k = y_sel[keep]
-                            weights = np.exp(-y_k / altura_contacto)
+                            theta_left = float(np.average(
+                                np.degrees(np.arctan2(1.0, valid_vals[mask])),
+                                weights=weights
+                            ))
 
-                            # Ángulo geométrico local de la tangente
-                            theta_deg = np.degrees(np.arctan2(1.0, slopes_k))
-                            # Mapear a ángulo de contacto DENTRO del líquido
-                            contacto_deg = np.where(slopes_k >= 0.0, 180.0 - theta_deg, theta_deg)
-                            angulo_izq = float(np.average(contacto_deg, weights=weights))
+                            angulo_izq = 180 - theta_left
                 except Exception as e:
                     angulo_izq = np.nan
 
@@ -192,28 +184,18 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50, tol_centroide_um=1.
                     dxdy_der = np.asarray(dxdy_der, dtype=float)
 
                     if np.any(np.isfinite(dxdy_der)):
-                        finite_mask = np.isfinite(dxdy_der)
-                        slopes = dxdy_der[finite_mask]
-                        y_sel = y_eval[finite_mask]
+                        valid_vals = dxdy_der[np.isfinite(dxdy_der)]
+                        median = np.median(valid_vals)
+                        mad = np.median(np.abs(valid_vals - median))
+                        mask = np.abs(valid_vals - median) < 2.0 * mad
 
-                        # Filtro robusto (MAD) sobre pendientes
-                        median = np.median(slopes)
-                        mad = np.median(np.abs(slopes - median))
-                        if mad == 0:
-                            keep = np.ones_like(slopes, dtype=bool)
-                        else:
-                            keep = np.abs(slopes - median) < 2.0 * mad
+                        if np.any(mask):
+                            weights = np.exp(-y_eval[np.isfinite(dxdy_der)][mask] / altura_contacto)
 
-                        if np.any(keep):
-                            slopes_k = slopes[keep]
-                            y_k = y_sel[keep]
-                            weights = np.exp(-y_k / altura_contacto)
-
-                            # Ángulo geométrico local de la tangente
-                            theta_deg = np.degrees(np.arctan2(1.0, slopes_k))
-                            # Mapear a ángulo de contacto DENTRO del líquido
-                            contacto_deg = np.where(slopes_k >= 0.0, 180.0 - theta_deg, theta_deg)
-                            angulo_der = float(np.average(contacto_deg, weights=weights))
+                            angulo_der = float(np.average(
+                                np.degrees(np.arctan2(1.0, valid_vals[mask])),
+                                weights=weights
+                            ))
 
                 except Exception as e:
                     angulo_der = np.nan
