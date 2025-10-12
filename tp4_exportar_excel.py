@@ -72,46 +72,63 @@ def exportar_ejercicio2_excel(df, nombre_archivo='resultados_completos2.xlsx'):
         header_style = Font(bold=True, color="FFFFFF")
         fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
-        # Columnas específicas del Ejercicio 2.
-        columnas = ['Imagen', 'Tiempo (s)', 'Angulo_izq', 'Angulo_der',
-                    'Perimetro_izq', 'Perimetro_der', 'Asimetria_perimetro',
-                    'Factor_esparcimiento', 'Tipo_angulo']
+        # Columnas específicas del Ejercicio 2
+        columnas = [
+            'Imagen', 'Imagen_num', 'Tiempo (s)', 'Angulo_izq', 'Angulo_der',
+            'Perimetro_izq', 'Perimetro_der', 'Asimetria_perimetro',
+            'Factor_esparcimiento', 'Tipo_angulo',
+            'Centroide_x (µm)', 'Centroide_y (µm)', 'Centroide_estable'
+        ]
 
-        # Verificar qué columnas existen realmente en el DataFrame
         columnas_existentes = [col for col in columnas if col in df.columns]
 
+        # Escribir encabezados
         for col_num, col_name in enumerate(columnas_existentes, 1):
             cell = ws.cell(row=1, column=col_num, value=col_name)
             cell.font = header_style
             cell.fill = fill
 
+        # Escribir filas
         for row_num, row_data in enumerate(dataframe_to_rows(df[columnas_existentes], index=False, header=False), 2):
             for col_num, value in enumerate(row_data, 1):
                 ws.cell(row=row_num, column=col_num, value=value)
 
-        column_widths = {
-            'A': 20,  # Imagen
-            'B': 12,  # Tiempo
-            'C': 15,  # Angulo_izq
-            'D': 15,  # Angulo_der
-            'E': 15,  # Perimetro_izq
-            'F': 15,  # Perimetro_der
-            'G': 18,  # Asimetria_perimetro
-            'H': 18,  # Factor_esparcimiento
-            'I': 15   # Tipo_angulo
+        # Ajustar anchos de columna por nombre
+        width_by_name = {
+            'Imagen': 20,
+            'Imagen_num': 12,
+            'Tiempo (s)': 12,
+            'Angulo_izq': 15,
+            'Angulo_der': 15,
+            'Perimetro_izq': 15,
+            'Perimetro_der': 15,
+            'Asimetria_perimetro': 18,
+            'Factor_esparcimiento': 18,
+            'Tipo_angulo': 15,
+            'Centroide_x (µm)': 16,
+            'Centroide_y (µm)': 16,
+            'Centroide_estable': 16
         }
+        for i, col in enumerate(columnas_existentes):
+            letter = chr(ord('A') + i)
+            ws.column_dimensions[letter].width = width_by_name.get(col, 15)
 
-        for col_letter, width in column_widths.items():
-            if col_letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'][:len(columnas_existentes)]:
-                ws.column_dimensions[col_letter].width = width
-
-        for row in ws.iter_rows(min_row=2):
+        # Formato numérico básico
+        for row in ws.iter_rows(min_row=2, max_col=len(columnas_existentes)):
             for cell in row:
                 cell.alignment = Alignment(horizontal='center')
-                if cell.column_letter == 'B':
+        # Formatos específicos por columna (si existen)
+        if 'Tiempo (s)' in columnas_existentes:
+            idx = columnas_existentes.index('Tiempo (s)') + 1
+            for col in ws.iter_cols(min_row=2, min_col=idx, max_col=idx):
+                for cell in col:
                     cell.number_format = '0.00000'
-                elif cell.column_letter in ['C', 'D', 'E', 'F', 'G', 'H']:
-                    cell.number_format = '0.00'
+        for nombre in ['Angulo_izq', 'Angulo_der', 'Perimetro_izq', 'Perimetro_der', 'Asimetria_perimetro', 'Factor_esparcimiento']:
+            if nombre in columnas_existentes:
+                idx = columnas_existentes.index(nombre) + 1
+                for col in ws.iter_cols(min_row=2, min_col=idx, max_col=idx):
+                    for cell in col:
+                        cell.number_format = '0.00'
 
         wb.save(nombre_archivo)
         print(f"\nArchivo Excel generado exitosamente: {nombre_archivo}")
