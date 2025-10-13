@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore')
 class CalculadorVolumenArea:
     """Clase para calcular volumen y área de una gota como figura de revolución."""
 
-    def __init__(self, df, scale=1.0, n_puntos=1000, suavizado=0.1):
+    def __init__(self, df, scale=1.0, n_puntos=1000, suavizado=0.1, min_overlap_frac=0.4):
         """
         df: DataFrame con columnas ['Imagen', 'Tiempo (s)', 'Contorno_x', 'Contorno_y']
         scale: factor de conversión (mm/px o m/px)
@@ -24,6 +24,8 @@ class CalculadorVolumenArea:
         self.scale = scale
         self.n_puntos = n_puntos
         self.suavizado = suavizado
+        # fracción mínima de solapamiento de dominio (y) entre métodos para comparar áreas
+        self.min_overlap_frac = min_overlap_frac
         self.resultados = []
 
     # ---------------------- AUXILIARES ----------------------
@@ -127,8 +129,10 @@ class CalculadorVolumenArea:
         y_eval = np.linspace(y_min, y_max, n_puntos)
         r = self._eval_seguro(funcion, y_eval)
 
-        # Ventana Savitzky–Golay: ~2% de la grilla, impar y >= 7
-        win = max(7, (n_puntos // 50) | 1)  # fuerza impar
+        # Ventana Savitzky–Golay: basada en self.suavizado (fracción de la grilla), impar y >= 7
+        frac = max(0.02, float(self.suavizado))  # al menos 2% para evitar ventanas muy pequeñas
+        win = max(7, int(n_puntos * frac) | 1)
+        # Asegurarse de que polyorder < win
         polyorder = 3 if win > 3 else 2
 
         r_suav = savgol_filter(r, window_length=win, polyorder=polyorder, mode='interp')
@@ -188,6 +192,7 @@ class CalculadorVolumenArea:
                     'Area_spline_simpson': np.nan,
                     'Area_poly_trapecio': np.nan,
                     'Area_poly_simpson': np.nan,
+                    'Overlap_frac': np.nan,
                     # Overlap (rango común entre spline y polinomio)
                     'Volumen_spline_trapecio_overlap': np.nan,
                     'Volumen_poly_trapecio_overlap': np.nan,
@@ -239,12 +244,21 @@ class CalculadorVolumenArea:
                         area_s_ov = self.area_superficial_trapecio(spline, None, y_min_c, y_max_c)
                         area_p_ov = self.area_superficial_trapecio(poly_f, None, y_min_c, y_max_c)
 
+                        # calcular fracción de solapamiento (longitud y) relativa al mayor dominio
+                        span_s = max(0.0, (y_max_s - y_min_s)) if (y_min_s is not None and y_max_s is not None) else 0.0
+                        span_p = max(0.0, (y_max_p - y_min_p)) if (y_min_p is not None and y_max_p is not None) else 0.0
+                        denom_span = max(span_s, span_p, 1e-12)
+                        overlap_len = max(0.0, (y_max_c - y_min_c))
+                        overlap_frac = overlap_len / denom_span
+
                         resultados_frame.update({
                             'Volumen_spline_trapecio_overlap': vol_s_ov,
                             'Volumen_poly_trapecio_overlap': vol_p_ov,
                             'Area_spline_trapecio_overlap': area_s_ov,
                             'Area_poly_trapecio_overlap': area_p_ov
                         })
+
+                        resultados_frame['Overlap_frac'] = float(overlap_frac)
 
                 self.resultados.append(resultados_frame)
 
@@ -277,6 +291,9 @@ class CalculadorVolumenArea:
 
         # ---- Área: usar rango común y diff por frame ----
         df_area = df_resultados.dropna(subset=['Area_spline_trapecio_overlap', 'Area_poly_trapecio_overlap'])
+        # Filtrar frames con solapamiento suficiente para evitar diffs ruidosos
+        if 'Overlap_frac' in df_area.columns:
+            df_area = df_area[df_area['Overlap_frac'] >= float(self.min_overlap_frac)]
         if len(df_area) == 0:
             print("\nNo hay suficientes frames con rango común para área.")
             return

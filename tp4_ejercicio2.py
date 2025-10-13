@@ -476,6 +476,44 @@ def generar_informe2():
             if r_all['min_frame'] is not None:
                 print(f"Frames usados: [{r_all['min_frame']}..{r_all['max_frame']}]")
 
+            # Promedio de TODOS los DINÁMICOS en el rango 0..126
+            def calcular_promedio_dinamico(df_angulos, img_col: str = 'Imagen_num', tipo_col: str = 'Tipo_angulo',
+                                          angL_col: str = 'Angulo_izq', angR_col: str = 'Angulo_der',
+                                          rango: tuple | None = (28, 126)):
+                """
+                Promedia SOLO frames dinámicos (Tipo_angulo=='Dinámico') dentro de un rango dado.
+                Devuelve la misma estructura que `calcular_promedio_estatico`.
+                """
+                df = df_angulos.copy()
+                if rango is not None and img_col in df.columns:
+                    ini, fin = rango
+                    df = df[(df[img_col] >= ini) & (df[img_col] <= fin)]
+
+                # Mantener solo DINÁMICOS en el rango
+                if tipo_col in df.columns:
+                    mask_dyn = df[tipo_col].astype(str).str.lower().eq('dinámico') | df[tipo_col].astype(str).str.lower().eq('dinamico')
+                    df = df[mask_dyn]
+
+                n = int(len(df))
+                L_mu = float(df[angL_col].mean()) if n else float('nan')
+                L_sd = float(df[angL_col].std(ddof=1)) if n > 1 else 0.0
+                R_mu = float(df[angR_col].mean()) if n else float('nan')
+                R_sd = float(df[angR_col].std(ddof=1)) if n > 1 else 0.0
+                min_f = int(df[img_col].min()) if n and img_col in df.columns else None
+                max_f = int(df[img_col].max()) if n and img_col in df.columns else None
+
+                return {
+                    'n': n, 'L_mu': L_mu, 'L_sd': L_sd, 'R_mu': R_mu, 'R_sd': R_sd,
+                    'min_frame': min_f, 'max_frame': max_f, 'rango': rango
+                }, df
+
+            r_dyn, _ = calcular_promedio_dinamico(df_angulos, rango=(0,126))
+            print("\n====== Resumen dinámico (todos los DINÁMICOS en 0–126) ======")
+            print(f"Izquierdo: μ = {r_dyn['L_mu']:.1f}°")
+            print(f"Derecho:   μ = {r_dyn['R_mu']:.1f}°")
+            if r_dyn['min_frame'] is not None:
+                print(f"Frames usados: [{r_dyn['min_frame']}..{r_dyn['max_frame']}]")
+
             # 2) Promedio FINAL (ventana final con centroide estable)
             r_final, _ = calcular_promedio_estatico(df_angulos, modo='final', rango=(28,126))
             print("\n====== Resumen estático (ventana final con centroide estable) ======")

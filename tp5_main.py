@@ -11,9 +11,9 @@ def cargar_datos_tp4():
 
     # Verificar que los archivos existen
     archivos_requeridos = [
-        'resultados_completos.xlsx',
-        'resultados_completos2.xlsx',
-        'resultados_completos3.xlsx'
+        "C:\\Users\\Valentino\\Desktop\\TP5-AN-facuPerron\\TP5-AN-facuPerron\\resultados_completos.xlsx",
+        "C:\\Users\\Valentino\\Desktop\\TP5-AN-facuPerron\\TP5-AN-facuPerron\\resultados_completos2.xlsx",
+        "C:\\Users\\Valentino\\Desktop\\TP5-AN-facuPerron\\TP5-AN-facuPerron\\resultados_completos3.xlsx"
     ]
 
     for archivo in archivos_requeridos:
