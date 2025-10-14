@@ -1,0 +1,42 @@
+# Archivos de imágenes
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.svg
+
+# Archivos Excel
+*.xlsx
+*.xls
+*.xlsm
+
+# Archivos PDF
+*.pdf
+
+# Archivos del sistema
+desktop.ini
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Carpetas de imágenes
+TP4_imagenes/
