@@ -4,7 +4,7 @@ from tp4_ejercicio3 import generar_informe3
 
 if __name__ == "__main__":
     # Configuración
-    carpeta_imagenes = 'TP4_imagenes'
+    carpeta_imagenes = "TP4_imagenes"
     num_imagenes = 126
 
     # EJERCICIO 1.

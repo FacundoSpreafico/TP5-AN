@@ -1,7 +1,9 @@
+# tp5_main.py
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import os
-from tp5_ejercicio1 import generar_informe1
+
 
 def cargar_datos_tp4():
     """Carga y unifica los datos del TP4"""
@@ -9,9 +11,9 @@ def cargar_datos_tp4():
 
     # Verificar que los archivos existen
     archivos_requeridos = [
-        'resultados_completos.xlsx',
-        'resultados_completos2.xlsx',
-        'resultados_completos3.xlsx'
+        "resultados_completos.xlsx",
+        "resultados_completos2.xlsx",
+        "resultados_completos3.xlsx"
     ]
 
     for archivo in archivos_requeridos:
@@ -51,6 +53,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # Importar y ejecutar ejercicio 1
+    from tp5_ejercicio1 import generar_informe1
     resultados_ej1 = generar_informe1()
 
     # EJERCICIO 2: Dinámica de la gota

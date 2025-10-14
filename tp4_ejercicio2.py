@@ -104,7 +104,9 @@ def ajustar_contornos(df, grado_polinomio=3, suavizado_spline=0.5, bins_y=None):
                 'Diametro_base': diametro_base,
                 'Altura_max': altura_max,
                 'Factor_esparcimiento': diametro_base / altura_max if altura_max > 0 else np.nan,
-                'Area': simps(np.abs(x - centro_x), y) if len(x) > 1 else np.nan
+                'Area': simps(np.abs(x - centro_x), y) if len(x) > 1 else np.nan,
+                'Centroide_x (µm)': row.get('Centroide_x (µm)', np.nan),
+                'Centroide_y (µm)': row.get('Centroide_y (µm)', np.nan)
             })
 
         except Exception as e:
@@ -114,7 +116,7 @@ def ajustar_contornos(df, grado_polinomio=3, suavizado_spline=0.5, bins_y=None):
     return pd.DataFrame(resultados)
 
 
-def calcular_angulo_contacto(df_ajustes, altura_contacto=50):
+def calcular_angulo_contacto(df_ajustes, altura_contacto=50, tol_centroide_um=1.0, tail_frames=12, min_frames_estaticos=5, min_frame_estatico=28):
 
     angulos = []
     densidad = 7380  # kg/m³
@@ -128,6 +130,7 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50):
             if imagen_num < 18:
                 angulos.append({
                     'Imagen': row['Imagen'],
+                    'Imagen_num': imagen_num,
                     'Tiempo (s)': row['Tiempo (s)'],
                     'Angulo_izq': np.nan,
                     'Angulo_der': np.nan,
@@ -153,20 +156,28 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50):
                     dxdy_izq = np.asarray(dxdy_izq, dtype=float)
 
                     if np.any(np.isfinite(dxdy_izq)):
-                        valid_vals = dxdy_izq[np.isfinite(dxdy_izq)]
-                        median = np.median(valid_vals)
-                        mad = np.median(np.abs(valid_vals - median))
-                        mask = np.abs(valid_vals - median) < 2.0 * mad
+                        finite_mask = np.isfinite(dxdy_izq)
+                        slopes = dxdy_izq[finite_mask]
+                        y_sel = y_eval[finite_mask]
 
-                        if np.any(mask):
-                            weights = np.exp(-y_eval[np.isfinite(dxdy_izq)][mask] / altura_contacto)
+                        # Filtro robusto (MAD) sobre pendientes
+                        median = np.median(slopes)
+                        mad = np.median(np.abs(slopes - median))
+                        if mad == 0:
+                            keep = np.ones_like(slopes, dtype=bool)
+                        else:
+                            keep = np.abs(slopes - median) < 2.0 * mad
 
-                            theta_left = float(np.average(
-                                np.degrees(np.arctan2(1.0, valid_vals[mask])),
-                                weights=weights
-                            ))
+                        if np.any(keep):
+                            slopes_k = slopes[keep]
+                            y_k = y_sel[keep]
+                            weights = np.exp(-y_k / altura_contacto)
 
-                            angulo_izq = 180 - theta_left
+                            # Ángulo geométrico local de la tangente
+                            theta_deg = np.degrees(np.arctan2(1.0, slopes_k))
+                            # Mapear a ángulo de contacto DENTRO del líquido
+                            contacto_deg = np.where(slopes_k >= 0.0, 180.0 - theta_deg, theta_deg)
+                            angulo_izq = float(np.average(contacto_deg, weights=weights))
                 except Exception as e:
                     angulo_izq = np.nan
 
@@ -181,18 +192,28 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50):
                     dxdy_der = np.asarray(dxdy_der, dtype=float)
 
                     if np.any(np.isfinite(dxdy_der)):
-                        valid_vals = dxdy_der[np.isfinite(dxdy_der)]
-                        median = np.median(valid_vals)
-                        mad = np.median(np.abs(valid_vals - median))
-                        mask = np.abs(valid_vals - median) < 2.0 * mad
+                        finite_mask = np.isfinite(dxdy_der)
+                        slopes = dxdy_der[finite_mask]
+                        y_sel = y_eval[finite_mask]
 
-                        if np.any(mask):
-                            weights = np.exp(-y_eval[np.isfinite(dxdy_der)][mask] / altura_contacto)
+                        # Filtro robusto (MAD) sobre pendientes
+                        median = np.median(slopes)
+                        mad = np.median(np.abs(slopes - median))
+                        if mad == 0:
+                            keep = np.ones_like(slopes, dtype=bool)
+                        else:
+                            keep = np.abs(slopes - median) < 2.0 * mad
 
-                            angulo_der = float(np.average(
-                                np.degrees(np.arctan2(1.0, valid_vals[mask])),
-                                weights=weights
-                            ))
+                        if np.any(keep):
+                            slopes_k = slopes[keep]
+                            y_k = y_sel[keep]
+                            weights = np.exp(-y_k / altura_contacto)
+
+                            # Ángulo geométrico local de la tangente
+                            theta_deg = np.degrees(np.arctan2(1.0, slopes_k))
+                            # Mapear a ángulo de contacto DENTRO del líquido
+                            contacto_deg = np.where(slopes_k >= 0.0, 180.0 - theta_deg, theta_deg)
+                            angulo_der = float(np.average(contacto_deg, weights=weights))
 
                 except Exception as e:
                     angulo_der = np.nan
@@ -216,8 +237,13 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50):
                             (factor_actual - factor_anterior) / (factor_anterior * (tiempo_actual - tiempo_anterior)))
                         es_dinamico = tasa_cambio > umbral_cambio
 
+            # Forzar dinámico en frames 18..27
+            if 18 <= imagen_num <= 27:
+                es_dinamico = True
+
             angulos.append({
                 'Imagen': row['Imagen'],
+                'Imagen_num': imagen_num,
                 'Tiempo (s)': row['Tiempo (s)'],
                 'Angulo_izq': angulo_izq,
                 'Angulo_der': angulo_der,
@@ -225,7 +251,9 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50):
                 'Perimetro_der': row.get('Perimetro_der', np.nan),
                 'Asimetria_perimetro': row.get('Asimetria_perimetro', np.nan),
                 'Factor_esparcimiento': factor_actual,
-                'Tipo_angulo': 'Dinámico' if es_dinamico else 'Estático'
+                'Tipo_angulo': 'Dinámico' if es_dinamico else 'Estático',
+                'Centroide_x (µm)': row.get('Centroide_x (µm)', np.nan),
+                'Centroide_y (µm)': row.get('Centroide_y (µm)', np.nan)
             })
 
         except Exception as e:
@@ -243,7 +271,38 @@ def calcular_angulo_contacto(df_ajustes, altura_contacto=50):
             })
             continue
 
-    return pd.DataFrame(angulos)
+    df_ang = pd.DataFrame(angulos)
+
+    # Marcar ventana final con centroide estable (y restringida a frames >= min_frame_estatico)
+    try:
+        if 'Centroide_y (µm)' in df_ang.columns and len(df_ang) > 0:
+            cy = df_ang['Centroide_y (µm)'].astype(float).values
+            img_nums = df_ang['Imagen_num'].astype(int).values if 'Imagen_num' in df_ang.columns else np.array([999999]*len(df_ang))
+            n = len(cy)
+            tail = min(tail_frames, n)
+            tail_vals = cy[n - tail:]
+            if np.isfinite(tail_vals).any():
+                ref = np.nanmedian(tail_vals)
+                estable = np.isfinite(cy) & (np.abs(cy - ref) <= tol_centroide_um) & (img_nums >= min_frame_estatico)
+                final_mask = np.zeros(n, dtype=bool)
+                count = 0
+                for i in range(n - 1, -1, -1):
+                    if estable[i]:
+                        final_mask[i] = True
+                        count += 1
+                    else:
+                        break
+                if count < min_frames_estaticos:
+                    final_mask[:] = False
+                df_ang['Centroide_estable'] = final_mask
+            else:
+                df_ang['Centroide_estable'] = False
+        else:
+            df_ang['Centroide_estable'] = False
+    except Exception:
+        df_ang['Centroide_estable'] = False
+
+    return df_ang
 
 
 def graficar_resultados(df_angulos):
@@ -266,21 +325,25 @@ def graficar_resultados(df_angulos):
     ax1.legend(fontsize=10)
     ax1.grid(True, alpha=0.3)
 
-    if 'Angulo_izq' in df_angulos and 'Angulo_der' in df_angulos:
-        angulos_izq_validos = df_angulos['Angulo_izq'].dropna()
-        angulos_der_validos = df_angulos['Angulo_der'].dropna()
+    # Medias sobre la ventana final con centroide estable
+    if 'Centroide_estable' in df_angulos.columns:
+        mask_win_izq = df_angulos['Centroide_estable'] & df_angulos['Angulo_izq'].notna()
+        mask_win_der = df_angulos['Centroide_estable'] & df_angulos['Angulo_der'].notna()
+        if mask_win_izq.any() or mask_win_der.any():
+            t_win = df_angulos.loc[df_angulos['Centroide_estable'], 'Tiempo (s)']
+            t0, t1 = t_win.min(), t_win.max()
+            ax1.axvspan(t0, t1, color='gray', alpha=0.15)
 
-        if len(angulos_izq_validos) > 0:
-            avg_izq = angulos_izq_validos.mean()
-            ax1.axhline(y=avg_izq, color='b', linestyle='--', alpha=0.5)
-            ax1.text(0.02, 0.98, f'Prom. Izq: {avg_izq:.1f}°',
-                     transform=ax1.transAxes, fontsize=9, verticalalignment='top', color='blue')
-
-        if len(angulos_der_validos) > 0:
-            avg_der = angulos_der_validos.mean()
-            ax1.axhline(y=avg_der, color='r', linestyle='--', alpha=0.5)
-            ax1.text(0.02, 0.93, f'Prom. Der: {avg_der:.1f}°',
-                     transform=ax1.transAxes, fontsize=9, verticalalignment='top', color='red')
+            if mask_win_izq.any():
+                avg_izq = df_angulos.loc[mask_win_izq, 'Angulo_izq'].mean()
+                ax1.axhline(y=avg_izq, color='b', linestyle='--', alpha=0.7)
+                ax1.text(0.02, 0.98, f'Prom. estático izq: {avg_izq:.1f}°',
+                         transform=ax1.transAxes, fontsize=9, verticalalignment='top', color='blue')
+            if mask_win_der.any():
+                avg_der = df_angulos.loc[mask_win_der, 'Angulo_der'].mean()
+                ax1.axhline(y=avg_der, color='r', linestyle='--', alpha=0.7)
+                ax1.text(0.02, 0.93, f'Prom. estático der: {avg_der:.1f}°',
+                         transform=ax1.transAxes, fontsize=9, verticalalignment='top', color='red')
 
     ax2 = axs[0, 1]
     if 'Asimetria_perimetro' in df_angulos:
@@ -322,6 +385,62 @@ def graficar_resultados(df_angulos):
     plt.close(fig)
 
 
+def _bloque_final_consecutivo(df, img_col: str):
+    """Devuelve el último bloque consecutivo por número de imagen."""
+    df = df.sort_values(img_col)
+    grupos = (df[img_col].diff().ne(1)).cumsum()
+    bloques = df.groupby(grupos)
+    return bloques.get_group(bloques.ngroups)
+
+
+def calcular_promedio_estatico(
+    df_angulos: pd.DataFrame,
+    img_col: str = 'Imagen_num',
+    tipo_col: str = 'Tipo_angulo',          # 'Estático' / 'Dinámico'
+    est_col: str = 'Centroide_estable',     # bool
+    angL_col: str = 'Angulo_izq',
+    angR_col: str = 'Angulo_der',
+    rango: tuple | None = (28, 126),
+    modo: str = 'todos_estaticos'           # 'todos_estaticos' o 'final'
+):
+    """
+    Promedia SOLO frames estáticos (Tipo_angulo=='Estático') y excluye cualquier dinámico en todo el rango.
+    - rango: (ini, fin) o None para usar toda la serie
+    - modo='todos_estaticos': todos los estáticos del rango
+    - modo='final': último bloque consecutivo con Centroide_estable=True dentro del rango
+    """
+    df = df_angulos.copy()
+
+    if rango is not None and img_col in df.columns:
+        ini, fin = rango
+        df = df[(df[img_col] >= ini) & (df[img_col] <= fin)]
+
+    # Mantener solo ESTÁTICOS en el rango (excluye dinámicos en cualquier posición)
+    if tipo_col in df.columns:
+        mask_static = df[tipo_col].astype(str).str.lower().eq('estático') | df[tipo_col].astype(str).str.lower().eq('estatico')
+        df = df[mask_static]
+
+    # Selección según modo
+    if modo == 'final' and est_col in df.columns:
+        df = df[df[est_col] == True]
+        if len(df) and img_col in df.columns:
+            df = _bloque_final_consecutivo(df, img_col)
+
+    # Estadísticos
+    n = int(len(df))
+    L_mu = float(df[angL_col].mean()) if n else float('nan')
+    L_sd = float(df[angL_col].std(ddof=1)) if n > 1 else 0.0
+    R_mu = float(df[angR_col].mean()) if n else float('nan')
+    R_sd = float(df[angR_col].std(ddof=1)) if n > 1 else 0.0
+    min_f = int(df[img_col].min()) if n and img_col in df.columns else None
+    max_f = int(df[img_col].max()) if n and img_col in df.columns else None
+
+    return {
+        'n': n, 'L_mu': L_mu, 'L_sd': L_sd, 'R_mu': R_mu, 'R_sd': R_sd,
+        'min_frame': min_f, 'max_frame': max_f, 'modo': modo, 'rango': rango
+    }, df
+
+
 def generar_informe2():
     print("\n\n=== EJERCICIO 2: Análisis de ángulos de contacto ===")
     try:
@@ -335,27 +454,80 @@ def generar_informe2():
 
         df_ajustes = ajustar_contornos(df, grado_polinomio=3, suavizado_spline=1.0)
 
-        df_angulos = calcular_angulo_contacto(df_ajustes, altura_contacto=50)
+        df_angulos = calcular_angulo_contacto(
+            df_ajustes,
+            altura_contacto=50,
+            tol_centroide_um=1.0,
+            tail_frames=12,
+            min_frames_estaticos=5,
+            min_frame_estatico=28
+        )
 
         exportar_ejercicio2_excel(df_angulos, 'resultados_completos2.xlsx')
         graficar_resultados(df_angulos)
 
         print("\n====== Resultados ======")
         if not df_angulos.empty:
-            angulos_izq_validos = df_angulos['Angulo_izq'].dropna()
-            angulos_der_validos = df_angulos['Angulo_der'].dropna()
+            # 1) Promedio de TODOS los estáticos en el rango 28..126
+            r_all, _ = calcular_promedio_estatico(df_angulos, modo='todos_estaticos', rango=(0,126))
+            print("\n====== Resumen estático (todos los ESTÁTICOS en 0–126) ======")
+            print(f"Izquierdo: μ = {r_all['L_mu']:.1f}°")
+            print(f"Derecho:   μ = {r_all['R_mu']:.1f}°")
+            if r_all['min_frame'] is not None:
+                print(f"Frames usados: [{r_all['min_frame']}..{r_all['max_frame']}]")
 
-            if len(angulos_izq_validos) > 0:
-                print(f"Ángulos izquierdos: μ = {angulos_izq_validos.mean():.1f}° ± {angulos_izq_validos.std():.1f}°")
-            if len(angulos_der_validos) > 0:
-                print(f"Ángulos derechos: μ = {angulos_der_validos.mean():.1f}° ± {angulos_der_validos.std():.1f}°")
+            # Promedio de TODOS los DINÁMICOS en el rango 0..126
+            def calcular_promedio_dinamico(df_angulos, img_col: str = 'Imagen_num', tipo_col: str = 'Tipo_angulo',
+                                          angL_col: str = 'Angulo_izq', angR_col: str = 'Angulo_der',
+                                          rango: tuple | None = (28, 126)):
+                """
+                Promedia SOLO frames dinámicos (Tipo_angulo=='Dinámico') dentro de un rango dado.
+                Devuelve la misma estructura que `calcular_promedio_estatico`.
+                """
+                df = df_angulos.copy()
+                if rango is not None and img_col in df.columns:
+                    ini, fin = rango
+                    df = df[(df[img_col] >= ini) & (df[img_col] <= fin)]
+
+                # Mantener solo DINÁMICOS en el rango
+                if tipo_col in df.columns:
+                    mask_dyn = df[tipo_col].astype(str).str.lower().eq('dinámico') | df[tipo_col].astype(str).str.lower().eq('dinamico')
+                    df = df[mask_dyn]
+
+                n = int(len(df))
+                L_mu = float(df[angL_col].mean()) if n else float('nan')
+                L_sd = float(df[angL_col].std(ddof=1)) if n > 1 else 0.0
+                R_mu = float(df[angR_col].mean()) if n else float('nan')
+                R_sd = float(df[angR_col].std(ddof=1)) if n > 1 else 0.0
+                min_f = int(df[img_col].min()) if n and img_col in df.columns else None
+                max_f = int(df[img_col].max()) if n and img_col in df.columns else None
+
+                return {
+                    'n': n, 'L_mu': L_mu, 'L_sd': L_sd, 'R_mu': R_mu, 'R_sd': R_sd,
+                    'min_frame': min_f, 'max_frame': max_f, 'rango': rango
+                }, df
+
+            r_dyn, _ = calcular_promedio_dinamico(df_angulos, rango=(0,126))
+            print("\n====== Resumen dinámico (todos los DINÁMICOS en 0–126) ======")
+            print(f"Izquierdo: μ = {r_dyn['L_mu']:.1f}°")
+            print(f"Derecho:   μ = {r_dyn['R_mu']:.1f}°")
+            if r_dyn['min_frame'] is not None:
+                print(f"Frames usados: [{r_dyn['min_frame']}..{r_dyn['max_frame']}]")
+
+            # 2) Promedio FINAL (ventana final con centroide estable)
+            r_final, _ = calcular_promedio_estatico(df_angulos, modo='final', rango=(28,126))
+            print("\n====== Resumen estático (ventana final con centroide estable) ======")
+            print(f"Izquierdo: μ = {r_final['L_mu']:.1f}°")
+            print(f"Derecho:   μ = {r_final['R_mu']:.1f}°")
+            if r_final['min_frame'] is not None:
+                print(f"Frames usados: [{r_final['min_frame']}..{r_final['max_frame']}]")
 
             if 'Tipo_angulo' in df_angulos:
-                counts = df_angulos[df_angulos['Tipo_angulo'].isin(['Dinámico', 'Estático'])][
-                    'Tipo_angulo'].value_counts(normalize=True)
-                print(f"\n====== Distribución de tipos de ángulo ======")
-                for tipo, porcentaje in counts.items():
-                    print(f"- {tipo}: {porcentaje:.1%}")
+                counts = df_angulos[df_angulos['Tipo_angulo'].isin(['Dinámico', 'Estático'])]['Tipo_angulo'].value_counts()
+                if not counts.empty:
+                    print(f"\n====== Conteo de tipos de ángulo (serie completa) ======")
+                    for tipo, cant in counts.items():
+                        print(f"- {tipo}: {cant}")
 
         return df_angulos
 
