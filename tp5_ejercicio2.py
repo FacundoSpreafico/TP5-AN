@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import time
 import warnings
+from tp5_exportar_excel import exportar_ejercicio2_excel
 
 warnings.filterwarnings('ignore')
 
@@ -387,7 +388,7 @@ def generar_informe2(datos_experimentales):
         solucionador.generar_graficos_comparativos()
 
         # Guardar resultados
-        guardar_resultados_dinamica(resultados, solucionador)
+        exportar_ejercicio2_excel(resultados, solucionador)
 
         # Análisis de desviaciones
         analizar_desviaciones(solucionador)

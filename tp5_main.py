@@ -1,9 +1,7 @@
-# tp5_main.py
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import os
-
+from tp5_ejercicio1 import generar_informe1
 
 def cargar_datos_tp4():
     """Carga y unifica los datos del TP4"""
@@ -53,7 +51,6 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # Importar y ejecutar ejercicio 1
-    from tp5_ejercicio1 import generar_informe1
     resultados_ej1 = generar_informe1()
 
     # EJERCICIO 2: Dinámica de la gota

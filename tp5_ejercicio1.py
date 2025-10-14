@@ -1,11 +1,12 @@
-# ejercicio1_tp5.py
+# tp5_ejercicio1.py
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.interpolate import UnivariateSpline, CubicSpline
+from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad, simpson, trapezoid
 import json
 import warnings
+from tp5_exportar_excel import exportar_ejercicio1_excel
 
 warnings.filterwarnings('ignore')
 
@@ -83,7 +84,8 @@ class CalculadorVolumenArea:
         """Calcula volumen usando regla del trapecio: V = π∫[x(y)]²dy"""
         y_eval = np.linspace(y_min, y_max, n_puntos)
         x_eval = funcion(y_eval)
-        x_eval = np.maximum(x_eval, 0)  # Evitar valores negativos
+        x_eval = np.nan_to_num(x_eval, nan=0.0, posinf=0.0, neginf=0.0)
+        x_eval = np.clip(x_eval, 0, None)  # evitar radios negativos
 
         integrando = np.pi * x_eval ** 2
         volumen = trapezoid(integrando, y_eval)
@@ -91,6 +93,9 @@ class CalculadorVolumenArea:
         # Estimación de error (diferencia con Simpson)
         y_fino = np.linspace(y_min, y_max, n_puntos * 2)
         x_fino = funcion(y_fino)
+        x_fino = np.nan_to_num(x_fino, nan=0.0, posinf=0.0, neginf=0.0)
+        x_fino = np.clip(x_fino, 0, None)
+
         integrando_fino = np.pi * x_fino ** 2
         volumen_simpson = simpson(integrando_fino, y_fino)
 
@@ -102,7 +107,8 @@ class CalculadorVolumenArea:
         """Calcula volumen usando regla de Simpson: V = π∫[x(y)]²dy"""
         y_eval = np.linspace(y_min, y_max, n_puntos)
         x_eval = funcion(y_eval)
-        x_eval = np.maximum(x_eval, 0)
+        x_eval = np.nan_to_num(x_eval, nan=0.0, posinf=0.0, neginf=0.0)
+        x_eval = np.clip(x_eval, 0, None)
 
         integrando = np.pi * x_eval ** 2
         volumen = simpson(integrando, y_eval)
@@ -113,10 +119,14 @@ class CalculadorVolumenArea:
 
         return volumen, error_estimado
 
+    # ======== CORREGIDAS PARA EVITAR ÁREAS NEGATIVAS ========
+
     def area_superficial_trapecio(self, funcion, derivada, y_min, y_max, n_puntos=1000):
         """Calcula área superficial usando trapecio: A = 2π∫x(y)√(1 + [dx/dy]²)dy"""
         y_eval = np.linspace(y_min, y_max, n_puntos)
         x_eval = funcion(y_eval)
+        x_eval = np.nan_to_num(x_eval, nan=0.0, posinf=0.0, neginf=0.0)
+        x_eval = np.abs(x_eval)  # asegurar radios positivos
 
         # Calcular derivada numéricamente si no se proporciona
         if derivada is None:
@@ -124,6 +134,7 @@ class CalculadorVolumenArea:
             dx_dy = np.gradient(x_eval, dy)
         else:
             dx_dy = derivada(y_eval)
+            dx_dy = np.nan_to_num(dx_dy, nan=0.0, posinf=0.0, neginf=0.0)
 
         integrando = 2 * np.pi * x_eval * np.sqrt(1 + dx_dy ** 2)
         area = trapezoid(integrando, y_eval)
@@ -134,17 +145,22 @@ class CalculadorVolumenArea:
         """Calcula área superficial usando Simpson: A = 2π∫x(y)√(1 + [dx/dy]²)dy"""
         y_eval = np.linspace(y_min, y_max, n_puntos)
         x_eval = funcion(y_eval)
+        x_eval = np.nan_to_num(x_eval, nan=0.0, posinf=0.0, neginf=0.0)
+        x_eval = np.abs(x_eval)  # asegurar radios positivos
 
         if derivada is None:
             dy = y_eval[1] - y_eval[0]
             dx_dy = np.gradient(x_eval, dy)
         else:
             dx_dy = derivada(y_eval)
+            dx_dy = np.nan_to_num(dx_dy, nan=0.0, posinf=0.0, neginf=0.0)
 
         integrando = 2 * np.pi * x_eval * np.sqrt(1 + dx_dy ** 2)
         area = simpson(integrando, y_eval)
 
         return area
+
+    # ========================================================
 
     def procesar_todos_frames(self):
         """Procesa todos los frames del dataset"""
@@ -330,7 +346,7 @@ def generar_informe1():
         calculador.generar_analisis_comparativo(df_resultados)
 
         # Guardar resultados
-        df_resultados.to_excel('resultados_tp5_volumen_area.xlsx', index=False)
+        exportar_ejercicio1_excel(df_resultados)
         print(f"\nResultados guardados en: resultados_tp5_volumen_area.xlsx")
 
         # Generar gráficos
@@ -364,41 +380,90 @@ def generar_graficos_volumen_area(df):
 
     # Gráfico 2: Comparación métodos integración (Spline)
     plt.subplot(2, 2, 2)
-    plt.plot(df['Tiempo (s)'], df['Volumen_spline_trapecio'], 'g-', label='Trapecio', alpha=0.7)
-    plt.plot(df['Tiempo (s)'], df['Volumen_spline_simpson'], 'm--', label='Simpson', alpha=0.7)
-    plt.xlabel('Tiempo (s)')
-    plt.ylabel('Volumen (m³)')
-    plt.title('Volumen - Spline: Trapecio vs Simpson')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    # Filtrar valores válidos
+    mask = ~(df['Volumen_spline_trapecio'].isna() | df['Volumen_spline_simpson'].isna())
+    df_filtrado = df[mask]
 
-    # Gráfico 3: Errores de integración
-    plt.subplot(2, 2, 3)
-    plt.plot(df['Tiempo (s)'], df['Error_vol_spline_trapecio'], 'c-', label='Error Spline+Trapecio', alpha=0.7)
-    plt.plot(df['Tiempo (s)'], df['Error_vol_poly_trapecio'], 'y--', label='Error Poly+Trapecio', alpha=0.7)
-    plt.xlabel('Tiempo (s)')
-    plt.ylabel('Error Estimado (m³)')
-    plt.title('Errores de Integración Numérica')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-
-    # Gráfico 4: Áreas superficiales
-    plt.subplot(2, 2, 4)
-    areas_validas = df.dropna(subset=['Area_spline_trapecio', 'Area_poly_trapecio'])
-    if len(areas_validas) > 0:
-        plt.plot(areas_validas['Tiempo (s)'], areas_validas['Area_spline_trapecio'], 'b-', label='Spline', alpha=0.7)
-        plt.plot(areas_validas['Tiempo (s)'], areas_validas['Area_poly_trapecio'], 'r--', label='Polinomio', alpha=0.7)
+    if len(df_filtrado) > 0:
+        plt.plot(df_filtrado['Tiempo (s)'], df_filtrado['Volumen_spline_trapecio'],
+                 'g-', label='Spline + Trapecio', alpha=0.7)
+        plt.plot(df_filtrado['Tiempo (s)'], df_filtrado['Volumen_spline_simpson'],
+                 'm-', label='Spline + Simpson', alpha=0.7)
         plt.xlabel('Tiempo (s)')
-        plt.ylabel('Área Superficial (m²)')
-        plt.title('Área Superficial - Comparación Ajustes')
+        plt.ylabel('Volumen (m³)')
+        plt.title('Comparación Métodos Integración - Spline')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+    # Gráfico 3: Comparación métodos integración (Polinomio)
+    plt.subplot(2, 2, 3)
+    mask_poly = ~(df['Volumen_poly_trapecio'].isna() | df['Volumen_poly_simpson'].isna())
+    df_filtrado_poly = df[mask_poly]
+
+    if len(df_filtrado_poly) > 0:
+        plt.plot(df_filtrado_poly['Tiempo (s)'], df_filtrado_poly['Volumen_poly_trapecio'],
+                 'c-', label='Polinomio + Trapecio', alpha=0.7)
+        plt.plot(df_filtrado_poly['Tiempo (s)'], df_filtrado_poly['Volumen_poly_simpson'],
+                 'y-', label='Polinomio + Simpson', alpha=0.7)
+        plt.xlabel('Tiempo (s)')
+        plt.ylabel('Volumen (m³)')
+        plt.title('Comparación Métodos Integración - Polinomio')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+    # Gráfico 4: Evolución del área superficial
+    plt.subplot(2, 2, 4)
+    mask_area = ~(df['Area_spline_trapecio'].isna() | df['Area_poly_trapecio'].isna())
+    df_filtrado_area = df[mask_area]
+
+    if len(df_filtrado_area) > 0:
+        plt.plot(df_filtrado_area['Tiempo (s)'], df_filtrado_area['Area_spline_trapecio'],
+                 'b-', label='Spline', alpha=0.7)
+        plt.plot(df_filtrado_area['Tiempo (s)'], df_filtrado_area['Area_poly_trapecio'],
+                 'r--', label='Polinomio', alpha=0.7)
+        plt.xlabel('Tiempo (s)')
+        plt.ylabel('Área (m²)')
+        plt.title('Evolución del Área Superficial')
         plt.legend()
         plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig('graficos_volumen_area_tp5.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    print("Gráficos guardados en: graficos_volumen_area_tp5.png")
+    plt.show()
 
+    # Gráfico adicional: Errores de integración
+    plt.figure(figsize=(12, 5))
 
-if __name__ == "__main__":
-    generar_informe1()
+    plt.subplot(1, 2, 1)
+    mask_error = ~(df['Error_vol_spline_trapecio'].isna())
+    df_error = df[mask_error]
+
+    if len(df_error) > 0:
+        plt.plot(df_error['Tiempo (s)'], df_error['Error_vol_spline_trapecio'],
+                 'r-', label='Error Spline', alpha=0.7)
+        plt.plot(df_error['Tiempo (s)'], df_error['Error_vol_poly_trapecio'],
+                 'b-', label='Error Polinomio', alpha=0.7)
+        plt.xlabel('Tiempo (s)')
+        plt.ylabel('Error Estimado (m³)')
+        plt.title('Error Estimado en Cálculo de Volumen')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.yscale('log')  # Escala logarítmica para mejor visualización
+
+    plt.subplot(1, 2, 2)
+    # Ratio error/volumen
+    if len(df_error) > 0:
+        error_ratio_spline = df_error['Error_vol_spline_trapecio'] / df_error['Volumen_spline_trapecio'] * 100
+        error_ratio_poly = df_error['Error_vol_poly_trapecio'] / df_error['Volumen_poly_trapecio'] * 100
+
+        plt.plot(df_error['Tiempo (s)'], error_ratio_spline, 'r-', label='Error Spline (%)', alpha=0.7)
+        plt.plot(df_error['Tiempo (s)'], error_ratio_poly, 'b-', label='Error Polinomio (%)', alpha=0.7)
+        plt.xlabel('Tiempo (s)')
+        plt.ylabel('Error Relativo (%)')
+        plt.title('Error Relativo en Cálculo de Volumen')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('graficos_error_integracion_tp5.png', dpi=300, bbox_inches='tight')
+    plt.show()
