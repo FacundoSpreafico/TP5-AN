@@ -19,30 +19,25 @@ def exportar_ejercicio1_excel(df, nombre_archivo='resultados_tp5_volumen_area.xl
         header_style = Font(bold=True, color="FFFFFF")
         fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
-        # Columnas del Ejercicio 1 (ACTUALIZADO - sin columnas de error)
         columnas = ['Imagen', 'Tiempo (s)',
                     'Volumen_spline_trapecio', 'Volumen_spline_simpson',
                     'Volumen_poly_trapecio', 'Volumen_poly_simpson',
                     'Area_spline_trapecio', 'Area_spline_simpson',
                     'Area_poly_trapecio', 'Area_poly_simpson']
 
-        # Verificar qué columnas existen realmente en el DataFrame
         columnas_existentes = [col for col in columnas if col in df.columns]
 
-        # Escribir encabezados
         for col_num, col_name in enumerate(columnas_existentes, 1):
             cell = ws.cell(row=1, column=col_num, value=col_name)
             cell.font = header_style
             cell.fill = fill
             cell.alignment = Alignment(horizontal='center')
 
-        # Escribir datos
         for row_num, row_data in enumerate(dataframe_to_rows(df[columnas_existentes], index=False, header=False), 2):
             for col_num, value in enumerate(row_data, 1):
                 cell = ws.cell(row=row_num, column=col_num, value=value)
                 cell.alignment = Alignment(horizontal='center')
 
-        # Ajustar anchos de columna (ACTUALIZADO)
         column_widths = {
             'A': 20,  # Imagen
             'B': 12,  # Tiempo (s)
@@ -60,7 +55,6 @@ def exportar_ejercicio1_excel(df, nombre_archivo='resultados_tp5_volumen_area.xl
             if col_letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'][:len(columnas_existentes)]:
                 ws.column_dimensions[col_letter].width = width
 
-        # Formato numérico (ACTUALIZADO)
         for row in ws.iter_rows(min_row=2):
             for cell in row:
                 if cell.column_letter == 'B':  # Tiempo
@@ -85,8 +79,6 @@ def exportar_ejercicio2_excel(resultados, solucionador, nombre_archivo='resultad
     """
     try:
         wb = Workbook()
-
-        # Remover hoja por defecto
         wb.remove(wb.active)
 
         header_style = Font(bold=True, color="FFFFFF")
@@ -97,7 +89,6 @@ def exportar_ejercicio2_excel(resultados, solucionador, nombre_archivo='resultad
             ws_taylor = wb.create_sheet("Taylor_Orden3")
             datos_taylor = resultados['taylor']
 
-            # Encabezados
             headers = ['Tiempo (s)', 'Altura (m)', 'Velocidad (m/s)']
             for col_num, header in enumerate(headers, 1):
                 cell = ws_taylor.cell(row=1, column=col_num, value=header)
@@ -111,12 +102,10 @@ def exportar_ejercicio2_excel(resultados, solucionador, nombre_archivo='resultad
                 ws_taylor.cell(row=i + 2, column=2, value=datos_taylor['alturas'][i]).number_format = '0.0000E+00'
                 ws_taylor.cell(row=i + 2, column=3, value=datos_taylor['velocidades'][i]).number_format = '0.0000E+00'
 
-            # Ajustar anchos
             ws_taylor.column_dimensions['A'].width = 12
             ws_taylor.column_dimensions['B'].width = 18
             ws_taylor.column_dimensions['C'].width = 18
 
-            # Centrar celdas
             for row in ws_taylor.iter_rows():
                 for cell in row:
                     cell.alignment = Alignment(horizontal='center')
@@ -181,7 +170,6 @@ def exportar_ejercicio2_excel(resultados, solucionador, nombre_archivo='resultad
             cell.fill = fill
             cell.alignment = Alignment(horizontal='center')
 
-        # Calcular errores para el resumen
         resumen_data = []
         for metodo in ['taylor', 'rk56', 'adams']:
             if metodo in resultados:
@@ -197,7 +185,6 @@ def exportar_ejercicio2_excel(resultados, solucionador, nombre_archivo='resultad
                     'Tolerancia': datos.get('tol_usada', 'N/A')
                 })
 
-        # Escribir datos del resumen
         for i, datos in enumerate(resumen_data, 2):
             ws_resumen.cell(row=i, column=1, value=datos['Metodo']).alignment = Alignment(horizontal='center')
             ws_resumen.cell(row=i, column=2, value=datos['Evaluaciones_Funcion']).alignment = Alignment(
@@ -217,7 +204,6 @@ def exportar_ejercicio2_excel(resultados, solucionador, nombre_archivo='resultad
                 ws_resumen.cell(row=i, column=5, value=datos['Tolerancia'])
             ws_resumen.cell(row=i, column=5).alignment = Alignment(horizontal='center')
 
-        # Ajustar anchos del resumen
         ws_resumen.column_dimensions['A'].width = 20
         ws_resumen.column_dimensions['B'].width = 18
         ws_resumen.column_dimensions['C'].width = 15
