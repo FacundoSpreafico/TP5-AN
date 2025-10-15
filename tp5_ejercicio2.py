@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import time
 import warnings
+from tp5_exportar_excel import exportar_ejercicio2_excel
 
 warnings.filterwarnings('ignore')
 
@@ -13,10 +14,8 @@ class SolucionadorEDOGota:
 
     def __init__(self, datos_experimentales):
         self.datos_exp = datos_experimentales
-        # Limpiar NaNs y garantizar vectores finitos
         self.tiempos_exp = datos_experimentales['Tiempo (s)'].astype(float).values
-        
-        # Buscar columna de Centroide_y con diferentes sufijos (por si hay merge)
+
         col_centroide_y = None
         for col_name in ['Centroide_y (µm)', 'Centroide_y (µm)_x', 'Centroide_y (µm)_y']:
             if col_name in datos_experimentales.columns:
@@ -29,7 +28,6 @@ class SolucionadorEDOGota:
             print(f"  [ADVERTENCIA] No se encontró columna Centroide_y. Columnas disponibles: {datos_experimentales.columns.tolist()}")
             alt_raw = np.full(len(self.tiempos_exp), np.nan)
 
-        # Reemplazar NaNs por el último valor válido o por cero si todos NaN
         if np.all(np.isnan(alt_raw)):
             print(f"  [ADVERTENCIA] Todos los valores de altura son NaN, usando ceros")
             alt_raw = np.zeros_like(self.tiempos_exp)
@@ -46,20 +44,18 @@ class SolucionadorEDOGota:
 
         self.alturas_exp = alt_raw * 1e-6  # Convertir µm -> m
 
-        # Parámetros del modelo (colocar estimaciones por defecto)
-        self.m = 1e-6  # masa estimada [kg] - se ajustará según el volumen
-        self.k = 10.0  # rigidez inicial [N/m]
-        self.c = 0.1  # amortiguamiento inicial [Ns/m]
+        # Parámetros del modelo-
+        self.m = 1e-6  # masa estimada [kg].
+        self.k = 10.0  # rigidez inicial [N/m].
+        self.c = 0.1  # amortiguamiento inicial [Ns/m].
 
-        # altura de equilibrio: usar mediana de la porción final para robustez
+
         n = len(self.alturas_exp)
         if n > 5:
-            tail = max(5, int(0.2 * n))  # usar al menos últimos 20% de frames
+            tail = max(5, int(0.2 * n))
             try:
                 self.yeq = float(np.nanmedian(self.alturas_exp[-tail:]))
-                # Debug: verificar que yeq no sea 0
                 if not np.isfinite(self.yeq) or abs(self.yeq) < 1e-10:
-                    # fallback: usar media de todos los datos
                     print(f"  [DEBUG] yeq era {self.yeq:.6e}, usando media de todos los datos")
                     self.yeq = float(np.nanmean(self.alturas_exp))
             except Exception as e:
@@ -68,12 +64,11 @@ class SolucionadorEDOGota:
         else:
             self.yeq = float(np.nanmedian(self.alturas_exp)) if np.isfinite(np.nanmedian(self.alturas_exp)) else float(np.nanmean(self.alturas_exp))
 
-        # Resultados
         self.resultados = {}
 
     def estimar_parametros_iniciales(self):
         """Estima parámetros iniciales basados en datos experimentales"""
-        densidad_agua = 1000  # kg/m³
+        densidad_agua = 1000  # [kg/m³]
         try:
             df_volumen = pd.read_excel('resultados_tp5_volumen_area.xlsx')
             volumen_promedio = df_volumen['Volumen_spline_trapecio'].mean()
@@ -85,14 +80,11 @@ class SolucionadorEDOGota:
                 volumen_m3 = float(volumen_promedio)
             self.m = densidad_agua * volumen_m3
         except Exception:
-            # Estimación por defecto
             self.m = 1e-6
 
-        # Estimar rigidez mediante frecuencia observada (simple)
         dt_arr = np.diff(self.tiempos_exp)
         dt = np.mean(dt_arr) if dt_arr.size else 1e-3
         derivada = np.gradient(self.alturas_exp, self.tiempos_exp)
-        # Buscar cruces de signo en la derivada (aprox. máximos/minimos => periodos)
         cambios_signo = np.where(np.diff(np.sign(derivada)))[0]
         if len(cambios_signo) > 1:
             periodo_aprox = (self.tiempos_exp[cambios_signo[-1]] - self.tiempos_exp[cambios_signo[0]]) / max(1, (len(cambios_signo) - 1))
@@ -101,14 +93,12 @@ class SolucionadorEDOGota:
         else:
             self.k = 5.0
 
-        # Estimar amortiguamiento por decaimiento exponencial aproximado
         if len(self.alturas_exp) > 10:
             tail = 10
             head = min(10, len(self.alturas_exp))
             amplitud_inicial = np.nanmax(self.alturas_exp[:head]) - self.yeq
             amplitud_final = np.nanmax(self.alturas_exp[-tail:]) - self.yeq
             if amplitud_inicial > 0 and amplitud_final > 0:
-                # evitar log(0)
                 decaimiento = -np.log(amplitud_final / amplitud_inicial) / max(1e-6, (self.tiempos_exp[-1] - self.tiempos_exp[0]))
                 self.c = 2 * self.m * decaimiento
             else:
@@ -147,7 +137,6 @@ class SolucionadorEDOGota:
         print("Aplicando método de Taylor orden 3...")
 
         if dt_inicial is None:
-            # Estimar dt basado en la dinámica del sistema
             omega_n = np.sqrt(self.k / self.m) if self.m > 0 else 100.0
             periodo = 2 * np.pi / omega_n if omega_n > 0 else 1e-3
             dt_inicial = periodo / 20  # 20 puntos por período
@@ -163,7 +152,6 @@ class SolucionadorEDOGota:
         coste_evaluaciones = 0
 
         while t < t_end - 1e-12:
-            # evitar overshoot final
             if t + dt > t_end:
                 dt = t_end - t
 
@@ -188,12 +176,10 @@ class SolucionadorEDOGota:
                 dt = max(dt_new, dt_min)
                 continue
 
-            # aceptar paso
             t = t + dt
             t_list.append(t)
             y_list.append(y_next)
 
-            # si el error es muy pequeño, aumentar dt ligeramente
             if error_est < tol * 0.1 and t < t_end:
                 dt = min(dt * 1.2, (t_end - t), dt_inicial * 5)
 
@@ -242,7 +228,6 @@ class SolucionadorEDOGota:
 
         coste_tiempo = time.time() - start_time
 
-        # Evaluar en los mismos puntos que los datos experimentales para comparación
         t_eval = self.tiempos_exp[self.tiempos_exp <= t_span[1]]
         if t_eval.size == 0:
             t_eval = np.linspace(t_span[0], t_span[1], 200)
@@ -290,9 +275,7 @@ class SolucionadorEDOGota:
         """
         print("Aplicando método Adams-Bashforth-Moulton...")
 
-        # Estimar dt apropiado si no se proporciona
         if dt_inicial is None:
-            # Usar un dt conservador basado en la frecuencia natural del sistema
             omega_n = np.sqrt(self.k / self.m) if self.m > 0 else 100.0
             periodo = 2 * np.pi / omega_n if omega_n > 0 else 1e-3
             dt_inicial = periodo / 100  # 100 puntos por período (más fino que Taylor)
@@ -417,9 +400,6 @@ class SolucionadorEDOGota:
         mejores_params = None
         mejor_error = 1e10
 
-        # rango de búsqueda razonable; pueden ampliarse
-        # Usar valores más realistas para gotas pequeñas
-        # Reducir granularidad para evitar sobreajuste perfecto
         ks = [0.5, 2, 5, 10, 20]
         cs = [0.001, 0.01, 0.05, 0.1]
         
@@ -520,8 +500,7 @@ class SolucionadorEDOGota:
         print(f"  Productos (menor es mejor):")
         for metodo in ['taylor', 'rk56', 'adams']:
             print(f"    {metodo}: {eficiencias[metodo]:.2e}")
-        
-        # Comparación a misma precisión
+
         print("\n--- ANÁLISIS A MISMA PRECISIÓN ---")
         print("Errores y costos logrados:")
         for metodo in ['taylor', 'rk56', 'adams']:
@@ -650,7 +629,7 @@ def generar_informe2(datos_experimentales):
         solucionador.ajustar_parametros_modelo()
         resultados, errores = solucionador.comparar_metodos()
         solucionador.generar_graficos_comparativos()
-        guardar_resultados_dinamica(resultados, solucionador)
+        exportar_ejercicio2_excel(resultados, solucionador)
         analizar_desviaciones(solucionador)
         return resultados
     except Exception as e:
