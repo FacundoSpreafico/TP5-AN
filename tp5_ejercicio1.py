@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 
 class CalculadorVolumenArea:
 
-    def __init__(self, df, scale=1.0, n_puntos=1000, suavizado=0.1):
+    def __init__(self, df, scale=1.0, n_puntos=500, suavizado=0.1):
         """
         df: DataFrame con columnas ['Imagen', 'Tiempo (s)', 'Contorno_x', 'Contorno_y']
         scale: factor de conversión (mm/px o m/px)
@@ -116,25 +116,16 @@ class CalculadorVolumenArea:
 
     # ---------------------- ÁREA: pipeline homogénea ----------------------
     def _area_con_pipeline_unica(self, funcion, y_min, y_max, n_puntos=1000, usar_simpson=False):
-        """
-        MISMA receta para spline y polinomio:
-        1) r = f(y) en grilla uniforme
-        2) Suavizado Savitzky–Golay de r
-        3) dr/dy vía Savitzky–Golay (derivative=1) sobre la MISMA señal
-        4) 2π ∫ r * sqrt(1 + (dr/dy)^2) dy
-        """
         y_eval = np.linspace(y_min, y_max, n_puntos)
         r = self._eval_seguro(funcion, y_eval)
 
-        # Ventana Savitzky–Golay: basada en self.suavizado (fracción de la grilla), impar y >= 7
-        frac = max(0.02, float(self.suavizado)) # al menos 2% para evitar ventanas muy pequeñas
+        frac = max(0.02, float(self.suavizado))
         win = max(7, int(n_puntos * frac) | 1)
-        # Asegurarse de que polyorder < win
         polyorder = 3 if win > 3 else 2
 
         r_suav = savgol_filter(r, window_length=win, polyorder=polyorder, mode='interp')
-        dr_dy = savgol_filter(r, window_length=win, polyorder=polyorder, deriv=1,
-                              delta=(y_eval[1] - y_eval[0]), mode='interp')
+        dr_dy = savgol_filter(r_suav, window_length=win, polyorder=polyorder, deriv=1,
+                              delta=(y_eval[1] - y_eval[0]), mode='interp')  # ← r_suav aquí
 
         integrando = 2.0 * np.pi * np.maximum(r_suav, 0.0) * np.sqrt(1.0 + dr_dy ** 2)
         area = simpson(integrando, y_eval) if usar_simpson else trapezoid(integrando, y_eval)
@@ -162,45 +153,81 @@ class CalculadorVolumenArea:
 
         errores = {}
 
-        # Volumen - Spline
+        # Volumen - Spline: Trapecio vs Simpson (frame por frame)
         if 'Volumen_spline_trapecio' in df_resultados.columns and 'Volumen_spline_simpson' in df_resultados.columns:
             mask = df_resultados['Volumen_spline_trapecio'].notna() & df_resultados['Volumen_spline_simpson'].notna()
             if mask.any():
-                error = error_relativo(
-                    df_resultados.loc[mask, 'Volumen_spline_trapecio'].mean(),
-                    df_resultados.loc[mask, 'Volumen_spline_simpson'].mean()
-                )
-                errores['volumen_spline_trapecio'] = error if not np.isnan(error) else 0.0
+                errors_frame = []
+                for idx in df_resultados[mask].index:
+                    a = df_resultados.loc[idx, 'Volumen_spline_trapecio']
+                    b = df_resultados.loc[idx, 'Volumen_spline_simpson']
+                    err = error_relativo(a, b)
+                    if not np.isnan(err):
+                        errors_frame.append(err)
 
-        # Volumen - Polinomio
+                if errors_frame:
+                    errores['volumen_spline_trapecio'] = np.mean(errors_frame)
+                else:
+                    errores['volumen_spline_trapecio'] = 0.0
+            else:
+                errores['volumen_spline_trapecio'] = 0.0
+
+        # Volumen - Polinomio: Trapecio vs Simpson (frame por frame)
         if 'Volumen_poly_trapecio' in df_resultados.columns and 'Volumen_poly_simpson' in df_resultados.columns:
             mask = df_resultados['Volumen_poly_trapecio'].notna() & df_resultados['Volumen_poly_simpson'].notna()
             if mask.any():
-                error = error_relativo(
-                    df_resultados.loc[mask, 'Volumen_poly_trapecio'].mean(),
-                    df_resultados.loc[mask, 'Volumen_poly_simpson'].mean()
-                )
-                errores['volumen_poly_trapecio'] = error if not np.isnan(error) else 0.0
+                errors_frame = []
+                for idx in df_resultados[mask].index:
+                    a = df_resultados.loc[idx, 'Volumen_poly_trapecio']
+                    b = df_resultados.loc[idx, 'Volumen_poly_simpson']
+                    err = error_relativo(a, b)
+                    if not np.isnan(err):
+                        errors_frame.append(err)
 
-        # Área - Spline
+                if errors_frame:
+                    errores['volumen_poly_trapecio'] = np.mean(errors_frame)
+                else:
+                    errores['volumen_poly_trapecio'] = 0.0
+            else:
+                errores['volumen_poly_trapecio'] = 0.0
+
+        # Área - Spline: Trapecio vs Simpson (frame por frame)
         if 'Area_spline_trapecio' in df_resultados.columns and 'Area_spline_simpson' in df_resultados.columns:
             mask = df_resultados['Area_spline_trapecio'].notna() & df_resultados['Area_spline_simpson'].notna()
             if mask.any():
-                error = error_relativo(
-                    df_resultados.loc[mask, 'Area_spline_trapecio'].mean(),
-                    df_resultados.loc[mask, 'Area_spline_simpson'].mean()
-                )
-                errores['area_spline_trapecio'] = error if not np.isnan(error) else 0.0
+                errors_frame = []
+                for idx in df_resultados[mask].index:
+                    a = df_resultados.loc[idx, 'Area_spline_trapecio']
+                    b = df_resultados.loc[idx, 'Area_spline_simpson']
+                    err = error_relativo(a, b)
+                    if not np.isnan(err):
+                        errors_frame.append(err)
 
-        # Área - Polinomio
+                if errors_frame:
+                    errores['area_spline_trapecio'] = np.mean(errors_frame)
+                else:
+                    errores['area_spline_trapecio'] = 0.0
+            else:
+                errores['area_spline_trapecio'] = 0.0
+
+        # Área - Polinomio: Trapecio vs Simpson (frame por frame)
         if 'Area_poly_trapecio' in df_resultados.columns and 'Area_poly_simpson' in df_resultados.columns:
             mask = df_resultados['Area_poly_trapecio'].notna() & df_resultados['Area_poly_simpson'].notna()
             if mask.any():
-                error = error_relativo(
-                    df_resultados.loc[mask, 'Area_poly_trapecio'].mean(),
-                    df_resultados.loc[mask, 'Area_poly_simpson'].mean()
-                )
-                errores['area_poly_trapecio'] = error if not np.isnan(error) else 0.0
+                errors_frame = []
+                for idx in df_resultados[mask].index:
+                    a = df_resultados.loc[idx, 'Area_poly_trapecio']
+                    b = df_resultados.loc[idx, 'Area_poly_simpson']
+                    err = error_relativo(a, b)
+                    if not np.isnan(err):
+                        errors_frame.append(err)
+
+                if errors_frame:
+                    errores['area_poly_trapecio'] = np.mean(errors_frame)
+                else:
+                    errores['area_poly_trapecio'] = 0.0
+            else:
+                errores['area_poly_trapecio'] = 0.0
 
         print("Volumen Spline Trapecio: {:.4f}%".format(errores.get('volumen_spline_trapecio', 0.0)))
         print("Volumen Spline Simpson: {:.4f}%".format(errores.get('volumen_spline_trapecio', 0.0)))
