@@ -41,14 +41,14 @@ def exportar_ejercicio1_excel(df, nombre_archivo='resultados_tp5_volumen_area.xl
         column_widths = {
             'A': 20,  # Imagen
             'B': 12,  # Tiempo (s)
-            'C': 22,  # Volumen_spline_trapecio
-            'D': 22,  # Volumen_spline_simpson
-            'E': 22,  # Volumen_poly_trapecio
-            'F': 22,  # Volumen_poly_simpson
-            'G': 20,  # Area_spline_trapecio
-            'H': 20,  # Area_spline_simpson
-            'I': 20,  # Area_poly_trapecio
-            'J': 20   # Area_poly_simpson
+            'C': 26,  # Volumen_spline_trapecio
+            'D': 26,  # Volumen_spline_simpson
+            'E': 26,  # Volumen_poly_trapecio
+            'F': 26,  # Volumen_poly_simpson
+            'G': 24,  # Area_spline_trapecio
+            'H': 24,  # Area_spline_simpson
+            'I': 24,  # Area_poly_trapecio
+            'J': 24   # Area_poly_simpson
         }
 
         for col_letter, width in column_widths.items():
