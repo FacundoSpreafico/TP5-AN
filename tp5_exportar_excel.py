@@ -19,12 +19,10 @@ def exportar_ejercicio1_excel(df, nombre_archivo='resultados_tp5_volumen_area.xl
         header_style = Font(bold=True, color="FFFFFF")
         fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
-        # Columnas del Ejercicio 1
+        # Columnas del Ejercicio 1 (ACTUALIZADO - sin columnas de error)
         columnas = ['Imagen', 'Tiempo (s)',
                     'Volumen_spline_trapecio', 'Volumen_spline_simpson',
-                    'Error_vol_spline_trapecio', 'Error_vol_spline_simpson',
                     'Volumen_poly_trapecio', 'Volumen_poly_simpson',
-                    'Error_vol_poly_trapecio', 'Error_vol_poly_simpson',
                     'Area_spline_trapecio', 'Area_spline_simpson',
                     'Area_poly_trapecio', 'Area_poly_simpson']
 
@@ -44,37 +42,32 @@ def exportar_ejercicio1_excel(df, nombre_archivo='resultados_tp5_volumen_area.xl
                 cell = ws.cell(row=row_num, column=col_num, value=value)
                 cell.alignment = Alignment(horizontal='center')
 
-        # Ajustar anchos de columna
+        # Ajustar anchos de columna (ACTUALIZADO)
         column_widths = {
             'A': 20,  # Imagen
             'B': 12,  # Tiempo (s)
             'C': 22,  # Volumen_spline_trapecio
             'D': 22,  # Volumen_spline_simpson
-            'E': 25,  # Error_vol_spline_trapecio
-            'F': 25,  # Error_vol_spline_simpson
-            'G': 22,  # Volumen_poly_trapecio
-            'H': 22,  # Volumen_poly_simpson
-            'I': 25,  # Error_vol_poly_trapecio
-            'J': 25,  # Error_vol_poly_simpson
-            'K': 20,  # Area_spline_trapecio
-            'L': 20,  # Area_spline_simpson
-            'M': 20,  # Area_poly_trapecio
-            'N': 20  # Area_poly_simpson
+            'E': 22,  # Volumen_poly_trapecio
+            'F': 22,  # Volumen_poly_simpson
+            'G': 20,  # Area_spline_trapecio
+            'H': 20,  # Area_spline_simpson
+            'I': 20,  # Area_poly_trapecio
+            'J': 20   # Area_poly_simpson
         }
 
         for col_letter, width in column_widths.items():
-            if col_letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'][
-                :len(columnas_existentes)]:
+            if col_letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'][:len(columnas_existentes)]:
                 ws.column_dimensions[col_letter].width = width
 
-        # Formato numérico
+        # Formato numérico (ACTUALIZADO)
         for row in ws.iter_rows(min_row=2):
             for cell in row:
                 if cell.column_letter == 'B':  # Tiempo
                     cell.number_format = '0.00000'
-                elif cell.column_letter in ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']:  # Volúmenes y errores
+                elif cell.column_letter in ['C', 'D', 'E', 'F']:  # Volúmenes
                     cell.number_format = '0.0000E+00'
-                elif cell.column_letter in ['K', 'L', 'M', 'N']:  # Áreas
+                elif cell.column_letter in ['G', 'H', 'I', 'J']:  # Áreas
                     cell.number_format = '0.0000E+00'
 
         wb.save(nombre_archivo)

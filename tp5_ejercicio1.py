@@ -7,14 +7,13 @@ from scipy.integrate import simpson, trapezoid
 from scipy.signal import savgol_filter
 import json
 import warnings
+from tp5_exportar_excel import exportar_ejercicio1_excel
 
 warnings.filterwarnings('ignore')
 
-
 class CalculadorVolumenArea:
-    """Clase para calcular volumen y área de una gota como figura de revolución."""
 
-    def __init__(self, df, scale=1.0, n_puntos=1000, suavizado=0.1, min_overlap_frac=0.4):
+    def __init__(self, df, scale=1.0, n_puntos=1000, suavizado=0.1):
         """
         df: DataFrame con columnas ['Imagen', 'Tiempo (s)', 'Contorno_x', 'Contorno_y']
         scale: factor de conversión (mm/px o m/px)
@@ -24,11 +23,8 @@ class CalculadorVolumenArea:
         self.scale = scale
         self.n_puntos = n_puntos
         self.suavizado = suavizado
-        # fracción mínima de solapamiento de dominio (y) entre métodos para comparar áreas
-        self.min_overlap_frac = min_overlap_frac
         self.resultados = []
 
-    # ---------------------- AUXILIARES ----------------------
     def obtener_mitad_contorno(self, contorno_x, contorno_y):
         """
         Divide el contorno en mitades usando el ápice (punto más bajo) y
@@ -63,7 +59,8 @@ class CalculadorVolumenArea:
         if r is None or y is None or len(y) < 4:
             return None
         idx = np.argsort(y)
-        y = y[idx]; r = r[idx]
+        y = y[idx];
+        r = r[idx]
         y_unique, indices = np.unique(y, return_index=True)
         r_unique = r[indices]
         if len(y_unique) < 4:
@@ -100,12 +97,12 @@ class CalculadorVolumenArea:
         r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
         return np.maximum(r, 0.0)
 
-    # ---------------------- VOLUMEN ----------------------
+    # ---------------------- VOLUMENES ----------------------
     def volumen_por_revolucion_trapecio(self, funcion, y_min, y_max, n_puntos=None):
         n = n_puntos or self.n_puntos
         y_eval = np.linspace(y_min, y_max, n)
         r_eval = self._eval_seguro(funcion, y_eval)
-        integrando = np.pi * r_eval**2
+        integrando = np.pi * r_eval ** 2
         volumen = trapezoid(integrando, y_eval)
         return volumen, 0.0
 
@@ -113,7 +110,7 @@ class CalculadorVolumenArea:
         n = n_puntos or self.n_puntos
         y_eval = np.linspace(y_min, y_max, n)
         r_eval = self._eval_seguro(funcion, y_eval)
-        integrando = np.pi * r_eval**2
+        integrando = np.pi * r_eval ** 2
         volumen = simpson(integrando, y_eval)
         return volumen, 0.0
 
@@ -130,16 +127,16 @@ class CalculadorVolumenArea:
         r = self._eval_seguro(funcion, y_eval)
 
         # Ventana Savitzky–Golay: basada en self.suavizado (fracción de la grilla), impar y >= 7
-        frac = max(0.02, float(self.suavizado))  # al menos 2% para evitar ventanas muy pequeñas
+        frac = max(0.02, float(self.suavizado)) # al menos 2% para evitar ventanas muy pequeñas
         win = max(7, int(n_puntos * frac) | 1)
         # Asegurarse de que polyorder < win
         polyorder = 3 if win > 3 else 2
 
         r_suav = savgol_filter(r, window_length=win, polyorder=polyorder, mode='interp')
         dr_dy = savgol_filter(r, window_length=win, polyorder=polyorder, deriv=1,
-                              delta=(y_eval[1]-y_eval[0]), mode='interp')
+                              delta=(y_eval[1] - y_eval[0]), mode='interp')
 
-        integrando = 2.0 * np.pi * np.maximum(r_suav, 0.0) * np.sqrt(1.0 + dr_dy**2)
+        integrando = 2.0 * np.pi * np.maximum(r_suav, 0.0) * np.sqrt(1.0 + dr_dy ** 2)
         area = simpson(integrando, y_eval) if usar_simpson else trapezoid(integrando, y_eval)
         return max(float(area), 0.0)
 
@@ -149,19 +146,138 @@ class CalculadorVolumenArea:
     def area_superficial_simpson(self, funcion, _derivada_no_usada, y_min, y_max, n_puntos=1000):
         return self._area_con_pipeline_unica(funcion, y_min, y_max, n_puntos=n_puntos, usar_simpson=True)
 
-    # ---------------------- RANGO COMÚN ----------------------
-    def _rango_comun(self, dom1, dom2, margen=0.0):
-        """
-        dom1, dom2: tuplas (y_min, y_max)
-        Devuelve (ymin_c, ymax_c) = intersección de dominios con un pequeño margen opcional.
-        """
-        y1_min, y1_max = float(dom1[0]), float(dom1[1])
-        y2_min, y2_max = float(dom2[0]), float(dom2[1])
-        y_min_c = max(y1_min, y2_min) + margen
-        y_max_c = min(y1_max, y2_max) - margen
-        if y_max_c <= y_min_c:
-            return None, None
-        return y_min_c, y_max_c
+    # ---------------------- CÁLCULO DE ERRORES RELATIVOS ----------------------
+    def calcular_errores_relativos(self, df_resultados):
+        """Calcula y muestra errores relativos entre métodos de integración"""
+        print("\n" + "=" * 60)
+        print("ESTADÍSTICAS DE ERRORES RELATIVOS (%)")
+        print("=" * 60)
+
+        def error_relativo(a, b):
+            """Calcula error relativo porcentual entre dos valores"""
+            if np.isnan(a) or np.isnan(b) or (a == 0 and b == 0):
+                return np.nan
+            denom = (abs(a) + abs(b)) / 2.0
+            return abs(a - b) / denom * 100.0 if denom > 0 else np.nan
+
+        errores = {}
+
+        # Volumen - Spline
+        if 'Volumen_spline_trapecio' in df_resultados.columns and 'Volumen_spline_simpson' in df_resultados.columns:
+            mask = df_resultados['Volumen_spline_trapecio'].notna() & df_resultados['Volumen_spline_simpson'].notna()
+            if mask.any():
+                error = error_relativo(
+                    df_resultados.loc[mask, 'Volumen_spline_trapecio'].mean(),
+                    df_resultados.loc[mask, 'Volumen_spline_simpson'].mean()
+                )
+                errores['volumen_spline_trapecio'] = error if not np.isnan(error) else 0.0
+
+        # Volumen - Polinomio
+        if 'Volumen_poly_trapecio' in df_resultados.columns and 'Volumen_poly_simpson' in df_resultados.columns:
+            mask = df_resultados['Volumen_poly_trapecio'].notna() & df_resultados['Volumen_poly_simpson'].notna()
+            if mask.any():
+                error = error_relativo(
+                    df_resultados.loc[mask, 'Volumen_poly_trapecio'].mean(),
+                    df_resultados.loc[mask, 'Volumen_poly_simpson'].mean()
+                )
+                errores['volumen_poly_trapecio'] = error if not np.isnan(error) else 0.0
+
+        # Área - Spline
+        if 'Area_spline_trapecio' in df_resultados.columns and 'Area_spline_simpson' in df_resultados.columns:
+            mask = df_resultados['Area_spline_trapecio'].notna() & df_resultados['Area_spline_simpson'].notna()
+            if mask.any():
+                error = error_relativo(
+                    df_resultados.loc[mask, 'Area_spline_trapecio'].mean(),
+                    df_resultados.loc[mask, 'Area_spline_simpson'].mean()
+                )
+                errores['area_spline_trapecio'] = error if not np.isnan(error) else 0.0
+
+        # Área - Polinomio
+        if 'Area_poly_trapecio' in df_resultados.columns and 'Area_poly_simpson' in df_resultados.columns:
+            mask = df_resultados['Area_poly_trapecio'].notna() & df_resultados['Area_poly_simpson'].notna()
+            if mask.any():
+                error = error_relativo(
+                    df_resultados.loc[mask, 'Area_poly_trapecio'].mean(),
+                    df_resultados.loc[mask, 'Area_poly_simpson'].mean()
+                )
+                errores['area_poly_trapecio'] = error if not np.isnan(error) else 0.0
+
+        print("Volumen Spline Trapecio: {:.4f}%".format(errores.get('volumen_spline_trapecio', 0.0)))
+        print("Volumen Spline Simpson: {:.4f}%".format(errores.get('volumen_spline_trapecio', 0.0)))
+        print("Volumen Polinomio Trapecio: {:.4f}%".format(errores.get('volumen_poly_trapecio', 0.0)))
+        print("Volumen Polinomio Simpson: {:.4f}%".format(errores.get('volumen_poly_trapecio', 0.0)))
+        print("Área Spline Trapecio: {:.4f}%".format(errores.get('area_spline_trapecio', 0.0)))
+        print("Área Spline Simpson: {:.4f}%".format(errores.get('area_spline_trapecio', 0.0)))
+        print("Área Polinomio Trapecio: {:.4f}%".format(errores.get('area_poly_trapecio', 0.0)))
+        print("Área Polinomio Simpson: {:.4f}%".format(errores.get('area_poly_trapecio', 0.0)))
+
+        return errores
+
+    # ---------------------- GRÁFICAS DE EVOLUCIÓN ----------------------
+    def generar_graficas_evolucion(self, df_resultados):
+        """Genera gráficas de evolución del volumen y área en función del frame"""
+        print("\nGenerando gráficas de evolución...")
+
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+
+        df_valido = df_resultados.dropna(subset=[
+            'Volumen_spline_trapecio', 'Volumen_spline_simpson',
+            'Volumen_poly_trapecio', 'Volumen_poly_simpson',
+            'Area_spline_trapecio', 'Area_spline_simpson',
+            'Area_poly_trapecio', 'Area_poly_simpson'
+        ])
+
+        if len(df_valido) == 0:
+            print("No hay datos válidos para generar gráficas")
+            return
+
+        frames = range(len(df_valido))
+
+        # Gráfica 1: Evolución del Volumen - Spline
+        ax1 = axes[0, 0]
+        ax1.plot(frames, df_valido['Volumen_spline_trapecio'], 'b-', label='Spline-Trapecio', linewidth=2)
+        ax1.plot(frames, df_valido['Volumen_spline_simpson'], 'r--', label='Spline-Simpson', linewidth=2)
+        ax1.set_xlabel('Frame')
+        ax1.set_ylabel('Volumen (mm³)')
+        ax1.set_title('Evolución del Volumen - Método Spline')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Gráfica 2: Evolución del Volumen - Polinomio
+        ax2 = axes[0, 1]
+        ax2.plot(frames, df_valido['Volumen_poly_trapecio'], 'g-', label='Polinomio-Trapecio', linewidth=2)
+        ax2.plot(frames, df_valido['Volumen_poly_simpson'], 'm--', label='Polinomio-Simpson', linewidth=2)
+        ax2.set_xlabel('Frame')
+        ax2.set_ylabel('Volumen (mm³)')
+        ax2.set_title('Evolución del Volumen - Método Polinomio')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        # Gráfica 3: Evolución del Área - Spline
+        ax3 = axes[1, 0]
+        ax3.plot(frames, df_valido['Area_spline_trapecio'], 'b-', label='Spline-Trapecio', linewidth=2)
+        ax3.plot(frames, df_valido['Area_spline_simpson'], 'r--', label='Spline-Simpson', linewidth=2)
+        ax3.set_xlabel('Frame')
+        ax3.set_ylabel('Área (mm²)')
+        ax3.set_title('Evolución del Área - Método Spline')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+
+        # Gráfica 4: Evolución del Área - Polinomio
+        ax4 = axes[1, 1]
+        ax4.plot(frames, df_valido['Area_poly_trapecio'], 'g-', label='Polinomio-Trapecio', linewidth=2)
+        ax4.plot(frames, df_valido['Area_poly_simpson'], 'm--', label='Polinomio-Simpson', linewidth=2)
+        ax4.set_xlabel('Frame')
+        ax4.set_ylabel('Área (mm²)')
+        ax4.set_title('Evolución del Área - Método Polinomio')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig('graficos_evolucion_volumen_area_tp5.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print("Gráficas de evolución guardadas en: graficos_evolucion_volumen_area_tp5.png")
 
     # ---------------------- PROCESAMIENTO ----------------------
     def procesar_todos_frames(self):
@@ -183,7 +299,6 @@ class CalculadorVolumenArea:
                 resultados_frame = {
                     'Imagen': row['Imagen'],
                     'Tiempo (s)': row['Tiempo (s)'],
-                    # Totales (cada método en su dominio)
                     'Volumen_spline_trapecio': np.nan,
                     'Volumen_spline_simpson': np.nan,
                     'Volumen_poly_trapecio': np.nan,
@@ -191,17 +306,10 @@ class CalculadorVolumenArea:
                     'Area_spline_trapecio': np.nan,
                     'Area_spline_simpson': np.nan,
                     'Area_poly_trapecio': np.nan,
-                    'Area_poly_simpson': np.nan,
-                    'Overlap_frac': np.nan,
-                    # Overlap (rango común entre spline y polinomio)
-                    'Volumen_spline_trapecio_overlap': np.nan,
-                    'Volumen_poly_trapecio_overlap': np.nan,
-                    'Area_spline_trapecio_overlap': np.nan,
-                    'Area_poly_trapecio_overlap': np.nan
+                    'Area_poly_simpson': np.nan
                 }
 
                 # --- SPLINE ---
-                y_min_s = y_max_s = None
                 if spline is not None:
                     y_knots = spline.x
                     y_min_s, y_max_s = float(np.min(y_knots)), float(np.max(y_knots))
@@ -219,7 +327,6 @@ class CalculadorVolumenArea:
                     })
 
                 # --- POLINOMIO ---
-                y_min_p = y_max_p = None
                 if poly_f is not None:
                     y_min_p, y_max_p = float(np.min(y_mitad)), float(np.max(y_mitad))
 
@@ -235,50 +342,29 @@ class CalculadorVolumenArea:
                         'Area_poly_simpson': area_simp_p
                     })
 
-                # --- OVERLAP entre Spline y Polinomio ---
-                if (spline is not None) and (poly_f is not None) and (y_min_s is not None) and (y_min_p is not None):
-                    y_min_c, y_max_c = self._rango_comun((y_min_s, y_max_s), (y_min_p, y_max_p), margen=0.0)
-                    if y_min_c is not None:
-                        vol_s_ov, _ = self.volumen_por_revolucion_trapecio(spline, y_min_c, y_max_c)
-                        vol_p_ov, _ = self.volumen_por_revolucion_trapecio(poly_f, y_min_c, y_max_c)
-                        area_s_ov = self.area_superficial_trapecio(spline, None, y_min_c, y_max_c)
-                        area_p_ov = self.area_superficial_trapecio(poly_f, None, y_min_c, y_max_c)
-
-                        # calcular fracción de solapamiento (longitud y) relativa al mayor dominio
-                        span_s = max(0.0, (y_max_s - y_min_s)) if (y_min_s is not None and y_max_s is not None) else 0.0
-                        span_p = max(0.0, (y_max_p - y_min_p)) if (y_min_p is not None and y_max_p is not None) else 0.0
-                        denom_span = max(span_s, span_p, 1e-12)
-                        overlap_len = max(0.0, (y_max_c - y_min_c))
-                        overlap_frac = overlap_len / denom_span
-
-                        resultados_frame.update({
-                            'Volumen_spline_trapecio_overlap': vol_s_ov,
-                            'Volumen_poly_trapecio_overlap': vol_p_ov,
-                            'Area_spline_trapecio_overlap': area_s_ov,
-                            'Area_poly_trapecio_overlap': area_p_ov
-                        })
-
-                        resultados_frame['Overlap_frac'] = float(overlap_frac)
-
                 self.resultados.append(resultados_frame)
 
             except Exception as e:
                 print(f"Error en frame {row.get('Imagen', idx)}: {str(e)}")
                 continue
 
-        return pd.DataFrame(self.resultados)
+        df_resultados = pd.DataFrame(self.resultados)
 
-    # ---------------------- ANÁLISIS ----------------------
+        self.calcular_errores_relativos(df_resultados)
+        self.generar_graficas_evolucion(df_resultados)
+
+        return df_resultados
+
     def generar_analisis_comparativo(self, df_resultados):
         print("\n" + "=" * 60)
-        print("ANÁLISIS COMPARATIVO - MÉTODOS DE INTEGRACIÓN (rango común y diff por frame)")
+        print("ANÁLISIS COMPARATIVO - MÉTODOS DE INTEGRACIÓN")
         print("=" * 60)
 
         def rel_diff_sym(a, b):
             denom = (abs(a) + abs(b)) / 2
             return abs(a - b) / denom * 100 if denom > 0 else np.nan
 
-        # ---- Volumen global (como antes) ----
+        # ---- Volumen global ----
         df_vol = df_resultados.dropna(subset=['Volumen_spline_trapecio', 'Volumen_poly_trapecio'])
         if len(df_vol) > 0:
             v_s_mean = df_vol['Volumen_spline_trapecio'].mean()
@@ -289,37 +375,17 @@ class CalculadorVolumenArea:
         else:
             print("Sin datos de volumen.")
 
-        # ---- Área: usar rango común y diff por frame ----
-        df_area = df_resultados.dropna(subset=['Area_spline_trapecio_overlap', 'Area_poly_trapecio_overlap'])
-        # Filtrar frames con solapamiento suficiente para evitar diffs ruidosos
-        if 'Overlap_frac' in df_area.columns:
-            df_area = df_area[df_area['Overlap_frac'] >= float(self.min_overlap_frac)]
-        if len(df_area) == 0:
-            print("\nNo hay suficientes frames con rango común para área.")
-            return
+        # ---- Área global ----
+        df_area = df_resultados.dropna(subset=['Area_spline_trapecio', 'Area_poly_trapecio'])
+        if len(df_area) > 0:
+            area_s_mean = df_area['Area_spline_trapecio'].mean()
+            area_p_mean = df_area['Area_poly_trapecio'].mean()
+            diff_area = rel_diff_sym(area_s_mean, area_p_mean)
+            print(f"Área promedio Spline: {area_s_mean:.3e}  |  Polinomio: {area_p_mean:.3e}")
+            print(f"Diferencia promedio de área (global): {diff_area:.2f}%")
 
-        diffs_area = []
-        for _, row in df_area.iterrows():
-            diffs_area.append(
-                rel_diff_sym(row['Area_spline_trapecio_overlap'], row['Area_poly_trapecio_overlap'])
-            )
 
-        area_s_mean = df_area['Area_spline_trapecio_overlap'].mean()
-        area_p_mean = df_area['Area_poly_trapecio_overlap'].mean()
-        diff_area_prom = np.nanmean(diffs_area)
-
-        print(f"\nÁrea promedio Spline (overlap): {area_s_mean:.3e}  |  Polinomio (overlap): {area_p_mean:.3e}")
-        print(f"Diferencia promedio de área (promedio de diffs por frame): {diff_area_prom:.2f}%")
-
-        print("\nNotas:")
-        print("- Para área comparamos SOLO sobre la intersección de dominios por frame.")
-        print("- El diff de área se calcula por frame y luego se promedia (más justo).")
-        print("- Método unificado de área: Savitzky–Golay en r(y) y dr/dy para ambos métodos.")
-        print("Sugerencia de reporte final: SPLINE (PCHIP) + SIMPSON.")
-
-# ---------------------- MAIN ----------------------
 def generar_informe1(scale=1.0):
-    print("=== EJERCICIO 1 TP5 - CÁLCULO DE VOLUMEN Y ÁREA ===")
     try:
         df = pd.read_excel('resultados_completos.xlsx', sheet_name='Datos Completos')
         print(f"Datos cargados: {len(df)} frames")
@@ -328,8 +394,10 @@ def generar_informe1(scale=1.0):
         df_res = calculador.procesar_todos_frames()
         calculador.generar_analisis_comparativo(df_res)
 
-        df_res.to_excel('resultados_tp5_volumen_area.xlsx', index=False)
+        exportar_ejercicio1_excel(df_res, 'resultados_tp5_volumen_area.xlsx')
+
         print("\nResultados guardados en: resultados_tp5_volumen_area.xlsx")
+        print("Gráficas guardadas en: graficos_evolucion_volumen_area_tp5.png")
 
         return df_res
 

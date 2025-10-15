@@ -1,9 +1,8 @@
-# tp5_main.py
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import os
-
+from tp5_ejercicio1 import generar_informe1
+from tp5_ejercicio2 import generar_informe2
 
 def cargar_datos_tp4():
     """Carga y unifica los datos del TP4"""
@@ -40,39 +39,20 @@ def cargar_datos_tp4():
 
 if __name__ == "__main__":
     """Función principal del TP5"""
-    print("=== TRABAJO PRÁCTICO 5 - ANÁLISIS NUMÉRICO ===")
-    print("Análisis de propiedades geométricas y dinámica de gotas")
-    print("Basado en datos reales del TP4\n")
+    print("\n" + "=" * 60)
+    print("TRABAJO PRÁCTICO 5 - ANÁLISIS NUMÉRICO")
+    print("=" * 60)
 
-    # Cargar datos del TP4
     df = cargar_datos_tp4()
 
-    # EJERCICIO 1: Volumen y Área
     print("\n" + "=" * 60)
-    print("EJERCICIO 1: Cálculo de volumen y área de la gota")
+    print("EJERCICIO 1.")
     print("=" * 60)
 
-    # Importar y ejecutar ejercicio 1
-    from tp5_ejercicio1 import generar_informe1
     resultados_ej1 = generar_informe1()
 
-    # EJERCICIO 2: Dinámica de la gota
     print("\n" + "=" * 60)
-    print("EJERCICIO 2: Modelo de la dinámica de la gota")
+    print("EJERCICIO 2.")
     print("=" * 60)
 
-    # Importar y ejecutar ejercicio 2
-    from tp5_ejercicio2 import generar_informe2
     resultados_ej2 = generar_informe2(df)
-
-    # Generar informe consolidado
-    print("\n" + "=" * 60)
-    print("INFORME FINAL TP5")
-    print("=" * 60)
-    print("✓ Ejercicio 1 completado: Volúmenes y áreas calculadas")
-    print("✓ Ejercicio 2 completado: Modelo dinámico implementado")
-    print("✓ Resultados guardados en:")
-    print("  - resultados_tp5_volumen_area.xlsx")
-    print("  - resultados_tp5_dinamica.xlsx")
-    print("  - graficos_volumen_area_tp5.png")
-    print("  - graficos_dinamica_tp5.png")
