@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 
 class CalculadorVolumenArea:
 
-    def __init__(self, df, scale=1.0, n_puntos=500, suavizado=0.1):
+    def __init__(self, df, scale=1.0, n_puntos=50, suavizado=0.5):
         """
         df: DataFrame con columnas ['Imagen', 'Tiempo (s)', 'Contorno_x', 'Contorno_y']
         scale: factor de conversión (mm/px o m/px)
@@ -115,7 +115,7 @@ class CalculadorVolumenArea:
         return volumen, 0.0
 
     # ---------------------- ÁREA: pipeline homogénea ----------------------
-    def _area_con_pipeline_unica(self, funcion, y_min, y_max, n_puntos=1000, usar_simpson=False):
+    def _area_con_pipeline_unica(self, funcion, y_min, y_max, n_puntos=50, usar_simpson=False):
         y_eval = np.linspace(y_min, y_max, n_puntos)
         r = self._eval_seguro(funcion, y_eval)
 
@@ -124,17 +124,16 @@ class CalculadorVolumenArea:
         polyorder = 3 if win > 3 else 2
 
         r_suav = savgol_filter(r, window_length=win, polyorder=polyorder, mode='interp')
-        dr_dy = savgol_filter(r_suav, window_length=win, polyorder=polyorder, deriv=1,
-                              delta=(y_eval[1] - y_eval[0]), mode='interp')  # ← r_suav aquí
+        dr_dy = savgol_filter(r_suav, window_length=win, polyorder=polyorder, deriv=1, delta=(y_eval[1] - y_eval[0]), mode='interp')
 
         integrando = 2.0 * np.pi * np.maximum(r_suav, 0.0) * np.sqrt(1.0 + dr_dy ** 2)
         area = simpson(integrando, y_eval) if usar_simpson else trapezoid(integrando, y_eval)
         return max(float(area), 0.0)
 
-    def area_superficial_trapecio(self, funcion, _derivada_no_usada, y_min, y_max, n_puntos=1000):
+    def area_superficial_trapecio(self, funcion, _derivada_no_usada, y_min, y_max, n_puntos=50):
         return self._area_con_pipeline_unica(funcion, y_min, y_max, n_puntos=n_puntos, usar_simpson=False)
 
-    def area_superficial_simpson(self, funcion, _derivada_no_usada, y_min, y_max, n_puntos=1000):
+    def area_superficial_simpson(self, funcion, _derivada_no_usada, y_min, y_max, n_puntos=50):
         return self._area_con_pipeline_unica(funcion, y_min, y_max, n_puntos=n_puntos, usar_simpson=True)
 
     # ---------------------- CÁLCULO DE ERRORES RELATIVOS ----------------------
@@ -306,7 +305,6 @@ class CalculadorVolumenArea:
 
         print("Gráficas de evolución guardadas en: graficos_evolucion_volumen_area_tp5.png")
 
-    # ---------------------- PROCESAMIENTO ----------------------
     def procesar_todos_frames(self):
         print("Procesando volúmenes y áreas para todos los frames...")
         for idx, row in self.df.iterrows():

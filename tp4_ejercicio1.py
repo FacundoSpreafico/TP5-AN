@@ -172,7 +172,6 @@ def generar_informe1(carpeta_imagenes, num_imagenes=126):
         if df.empty:
             raise ValueError("No se pudieron procesar imágenes")
 
-        # Análisis de resultados
         print("\nResumen estadístico:")
         print(f"- Imágenes procesadas: {len(df)}")
         print(f"- Centroide X promedio: {df['Centroide_x (µm)'].mean():.2f} µm")

@@ -49,7 +49,6 @@ class SolucionadorEDOGota:
         self.k = 10.0  # rigidez inicial [N/m].
         self.c = 0.1  # amortiguamiento inicial [Ns/m].
 
-
         n = len(self.alturas_exp)
         if n > 5:
             tail = max(5, int(0.2 * n))
@@ -117,29 +116,12 @@ class SolucionadorEDOGota:
         return dydt
 
     def metodo_taylor_orden3(self, t_span, y0, dt_inicial=None, tol=1e-6, dt_min=1e-9):
-        """
-        Método de Taylor de orden 3 con paso adaptativo.
-        
-        Tolerancia elegida: tol = 3e-9 (0.003 µm en la escala del problema)
-        
-        JUSTIFICACIÓN DE LA TOLERANCIA:
-        1. Objetivo: Lograr error RMS comparable a los otros métodos (~24 µm)
-        2. Compensación por orden: Taylor tiene orden 3 → error local O(h⁴)
-           - RK5-6 tiene orden 5-6 → error local O(h⁶)
-           - Para mismo error final, Taylor necesita tol más estricta
-        3. Factor de ajuste: tol_Taylor ≈ tol_RK / 3.3
-           - Basado en relación empírica error_final vs tolerancia
-        4. Resultado: 213 evaluaciones → 24.9 µm error (comparable a 24.3 µm de RK5-6)
-        5. Eficiencia: Mayor precisión/costo (2.7× menos evaluaciones que RK5-6)
-        
-        Balance costo/precisión: Óptimo para método de orden bajo
-        """
         print("Aplicando método de Taylor orden 3...")
 
         if dt_inicial is None:
             omega_n = np.sqrt(self.k / self.m) if self.m > 0 else 100.0
             periodo = 2 * np.pi / omega_n if omega_n > 0 else 1e-3
-            dt_inicial = periodo / 20  # 20 puntos por período
+            dt_inicial = periodo / 20
             dt_inicial = min(dt_inicial, 1e-4)
 
         t = float(t_span[0])
@@ -157,21 +139,17 @@ class SolucionadorEDOGota:
 
             y = y_list[-1]
 
-            # Evaluaciones de derivadas para Taylor orden 3
             f1 = self.edo_gota(t, y)
             f2 = self.edo_gota(t + 0.5 * dt, y + 0.5 * dt * f1)
             f3 = self.edo_gota(t + dt, y + dt * f2)
 
             coste_evaluaciones += 3
 
-            # Taylor orden 3
             y_next = y + dt * f1 + (dt ** 2) / 2 * f2 + (dt ** 3) / 6 * f3
 
-            # Estimación de error local (término de orden superior)
             error_est = np.linalg.norm((dt ** 3) / 6 * f3)
             
             if error_est > tol and dt > dt_min:
-                # reducir dt
                 dt_new = dt * 0.8 * (tol / error_est) ** (1 / 3)
                 dt = max(dt_new, dt_min)
                 continue
@@ -198,25 +176,6 @@ class SolucionadorEDOGota:
         return t_values, y_values
 
     def metodo_runge_kutta_56(self, t_span, y0, tol=1e-8):
-        """
-        Método Runge-Kutta de orden 5-6 (DOP853) con paso adaptativo.
-        
-        Tolerancia elegida: tol = 1e-8 (0.01 µm en la escala del problema)
-        
-        JUSTIFICACIÓN DE LA TOLERANCIA:
-        1. Rol: Método de REFERENCIA de alta precisión
-        2. Orden alto (5-6) → convergencia muy rápida con error local O(h⁶)
-        3. Criterio de elección de tol:
-           - Error experimental: ~5-10 µm (ruido en mediciones)
-           - tol = 1e-8 m = 0.01 µm << error experimental
-           - Garantiza que error numérico NO afecte comparación física
-        4. Resultado: 584 evaluaciones → 24.3 µm error (limitado por modelo físico)
-        5. Ventaja: Error final dominado por física, no por método numérico
-        
-        Balance costo/precisión: Referencia confiable, método más robusto
-        Nota: DOP853 de scipy.integrate.solve_ivp es implementación estándar
-        """
-        print("Aplicando método Runge-Kutta 5-6...")
 
         start_time = time.time()
 
@@ -245,41 +204,13 @@ class SolucionadorEDOGota:
         return t_eval, y_eval
 
     def metodo_adams_bashforth_moulton(self, t_span, y0, dt_inicial=None, tol=1e-6):
-        """
-        Método multipaso Adams-Bashforth-Moulton (4º orden) con paso adaptativo.
-        
-        Tolerancia elegida: tol = 2e-8 (0.02 µm en la escala del problema)
-        
-        JUSTIFICACIÓN DEL MÉTODO Y TOLERANCIA:
-        A) Elección del método Adams-Bashforth-Moulton:
-           - Método MULTIPASO: reutiliza historia (f_n, f_{n-1}, f_{n-2}, f_{n-3})
-           - Orden 4 → error local O(h⁵), intermedio entre Taylor y RK5-6
-           - Predictor-corrector: permite estimación de error y control adaptativo
-           - Eficiente para problemas suaves con muchos pasos
-           - Ideal para ecuaciones de osciladores (como este problema)
-        
-        B) Elección de tolerancia tol = 2e-8:
-           1. Objetivo: Igualar precisión de RK5-6 (~24 µm)
-           2. Factor de ajuste: tol_Adams ≈ 2 × tol_RK
-              - Método multipaso tiene ventaja: usa información histórica
-              - Menor factor que Taylor porque orden es mayor (4 vs 3)
-           3. Resultado: 8077 evaluaciones → 24.28 µm error
-           4. Trade-off: Muchas evaluaciones por arranque RK4 y pasos pequeños
-        
-        C) Comparación con otros métodos:
-           - RK5-6: Más eficiente en este problema (584 vs 8077 eval)
-           - Taylor: Similar eficiencia pero menor costo (213 eval)
-           - Adams: Mejor para problemas muy largos (amortiza arranque)
-        
-        Balance costo/precisión: Adecuado para problemas de larga duración
-        """
         print("Aplicando método Adams-Bashforth-Moulton...")
 
         if dt_inicial is None:
             omega_n = np.sqrt(self.k / self.m) if self.m > 0 else 100.0
             periodo = 2 * np.pi / omega_n if omega_n > 0 else 1e-3
-            dt_inicial = periodo / 100  # 100 puntos por período (más fino que Taylor)
-            dt_inicial = min(dt_inicial, 5e-5)  # limitar a 0.05 ms máximo
+            dt_inicial = periodo / 100
+            dt_inicial = min(dt_inicial, 5e-5)
         
         dt = dt_inicial
         dt_min = dt_inicial / 100
@@ -290,7 +221,7 @@ class SolucionadorEDOGota:
         t_list = [t]
         y_list = [np.array(y0, dtype=float)]
         
-        # Inicializar con RK4 (primeros 3 pasos)
+        # Inicializar con RK4
         coste_evaluaciones = 0
         for step in range(3):
             if t >= t_end:
@@ -307,7 +238,6 @@ class SolucionadorEDOGota:
             y_list.append(y_new)
             coste_evaluaciones += 4
 
-        # ABM propiamente dicho
         intentos_reduccion = 0
         max_intentos = 5
         
@@ -316,44 +246,38 @@ class SolucionadorEDOGota:
                 break
                 
             dt_actual = min(dt, t_end - t)
-            
-            # Predictor (Adams-Bashforth de 4 pasos)
+
             f0 = self.edo_gota(t_list[-1], y_list[-1])
             f1 = self.edo_gota(t_list[-2], y_list[-2])
             f2 = self.edo_gota(t_list[-3], y_list[-3])
             f3 = self.edo_gota(t_list[-4], y_list[-4])
             
             y_pred = y_list[-1] + dt_actual * (55/24 * f0 - 59/24 * f1 + 37/24 * f2 - 9/24 * f3)
-            
-            # Corrector (Adams-Moulton de 4 pasos)
+
             t_new = t + dt_actual
             f_pred = self.edo_gota(t_new, y_pred)
             y_corr = y_list[-1] + dt_actual * (9/24 * f_pred + 19/24 * f0 - 5/24 * f1 + 1/24 * f2)
             
             coste_evaluaciones += 5
-            
-            # Estimación de error local
+
             error_local = np.linalg.norm(y_corr - y_pred)
             
             if error_local > tol * 10 and intentos_reduccion < max_intentos:
-                # Rechazar paso y reducir dt solo si el error es muy grande
                 dt = max(dt * 0.5, dt_min)
                 intentos_reduccion += 1
                 continue
-            
-            # Aceptar paso
+
             t = t_new
             t_list.append(t)
             y_list.append(y_corr)
             intentos_reduccion = 0
-            
-            # Ajustar dt para el próximo paso (con límites conservadores)
+
             if error_local > tol:
                 factor = 0.95 * (tol / max(error_local, 1e-15)) ** 0.2
             else:
-                factor = 1.1  # aumentar ligeramente si el error es bajo
+                factor = 1.1
             
-            factor = max(0.8, min(1.2, factor))  # limitar cambios bruscos
+            factor = max(0.8, min(1.2, factor))
             dt = min(max(dt * factor, dt_min), dt_max)
 
         t_values = np.array(t_list)
@@ -379,7 +303,6 @@ class SolucionadorEDOGota:
             self.k, self.c = k, c
 
             t_span = [self.tiempos_exp[0], self.tiempos_exp[-1]]
-            # velocidad inicial estimada desde derivada si es posible
             v0 = 0.0
             try:
                 v_est = np.gradient(self.alturas_exp, self.tiempos_exp)
@@ -424,7 +347,6 @@ class SolucionadorEDOGota:
 
         t_span = [self.tiempos_exp[0], self.tiempos_exp[-1]]
 
-        # velocidad inicial estimada
         v0 = 0.0
         try:
             v_est = np.gradient(self.alturas_exp, self.tiempos_exp)
@@ -446,7 +368,6 @@ class SolucionadorEDOGota:
         # Adams-Bashforth-Moulton con tolerancia ajustada para error ~25 µm
         t_adams, y_adams = self.metodo_adams_bashforth_moulton(t_span, y0, tol=2e-8)
 
-        # Calcular errores vs datos experimentales
         errores = {}
         errores_relativos = {}
         
@@ -466,7 +387,6 @@ class SolucionadorEDOGota:
             else:
                 errores_relativos[metodo] = np.nan
 
-        # Reporte de comparación
         print("\n--- COMPARACIÓN DE COSTOS COMPUTACIONALES ---")
         print(f"{'Método':<20} {'Evaluaciones':<15} {'Error RMS (µm)':<18} {'Error Rel (%)':<15} {'dt prom (s)':<15}")
         print("-" * 95)
@@ -476,54 +396,15 @@ class SolucionadorEDOGota:
             coste = datos.get('coste', 'N/A')
             dtprom = datos.get('dt_promedio', 'N/A')
             err_m = errores.get(metodo, np.nan)
-            err_um = err_m * 1e6  # convertir a µm
+            err_um = err_m * 1e6
             err_rel = errores_relativos.get(metodo, np.nan)
-            
-            # Formatear dtprom si es numérico
+
             if isinstance(dtprom, (int, float)) and np.isfinite(dtprom):
                 dtprom_str = f"{dtprom:.4e}"
             else:
                 dtprom_str = str(dtprom)
             
             print(f"{metodo:<20} {str(coste):<15} {err_um:<18.4f} {err_rel:<15.4f} {dtprom_str:<15}")
-
-        # Análisis de eficiencia (considerar error Y costo)
-        # Producto error * coste (menor es mejor)
-        eficiencias = {}
-        for metodo in ['taylor', 'rk56', 'adams']:
-            err = errores.get(metodo, np.inf)
-            cost = self.resultados[metodo].get('coste', np.inf)
-            eficiencias[metodo] = err * cost
-        
-        metodo_eficiente = min(eficiencias, key=eficiencias.get)
-        print(f"\nMétodo más eficiente (error × coste): {metodo_eficiente}")
-        print(f"  Productos (menor es mejor):")
-        for metodo in ['taylor', 'rk56', 'adams']:
-            print(f"    {metodo}: {eficiencias[metodo]:.2e}")
-
-        print("\n--- ANÁLISIS A MISMA PRECISIÓN ---")
-        print("Errores y costos logrados:")
-        for metodo in ['taylor', 'rk56', 'adams']:
-            err_um = errores[metodo] * 1e6
-            cost = self.resultados[metodo]['coste']
-            print(f"  • {metodo:8}: {cost:5} eval → {err_um:6.2f} µm error")
-        
-        # Explicación de estrategia de tolerancias
-        print("\n--- ESTRATEGIA DE TOLERANCIAS ---")
-        print("Objetivo: Comparar métodos a MISMA PRECISIÓN (~24 µm)")
-        print("\nTolerancia por método:")
-        print("  • RK5-6:  tol = 1.0e-8  (REFERENCIA de alta precisión)")
-        print("  • Adams:  tol = 2.0e-8  (2× más relajada que RK, orden 4 intermedio)")
-        print("  • Taylor: tol = 3.0e-9  (3.3× más estricta que RK, compensa orden 3)")
-        print("\nJustificación:")
-        print("  - Métodos de mayor orden logran misma precisión con tol más relajada")
-        print("  - Factor de ajuste basado en convergencia: tol ∝ h^(orden+1)")
-        print("  - Permite comparación JUSTA de costos computacionales")
-        
-        print("\nConclusión:")
-        print("  • RK5-6: Mejor balance precisión/costo - RECOMENDADO")
-        print("  • Taylor: Menos evaluaciones pero necesita tol más estricta")
-        print("  • Adams: Muchas evaluaciones por arranque RK4 y pasos pequeños")
 
         return self.resultados, errores
 
@@ -588,11 +469,8 @@ class SolucionadorEDOGota:
                 tiempos = datos['tiempos']
                 n_puntos = len(tiempos)
                 coste_total = datos.get('coste', 0)
-                
-                # Estimar evaluaciones acumuladas (lineal aproximado)
-                # Para métodos adaptativos, asumimos distribución proporcional al avance temporal
+
                 if n_puntos > 1:
-                    # Proporción de tiempo avanzado
                     tiempo_normalizado = (tiempos - tiempos[0]) / (tiempos[-1] - tiempos[0])
                     eval_acumuladas = coste_total * tiempo_normalizado
                     ax.plot(tiempos, eval_acumuladas, style, label=label, linewidth=2, alpha=0.8)
@@ -602,8 +480,7 @@ class SolucionadorEDOGota:
         ax.set_title('Costo Computacional vs Tiempo', fontsize=12, fontweight='bold')
         ax.legend()
         ax.grid(True, alpha=0.3)
-        
-        # Añadir anotaciones con totales
+
         for metodo in ['taylor', 'rk56', 'adams']:
             if metodo in self.resultados:
                 coste = self.resultados[metodo].get('coste', 0)
@@ -616,7 +493,7 @@ class SolucionadorEDOGota:
         plt.tight_layout()
         plt.savefig('graficos_dinamica_tp5.png', dpi=300, bbox_inches='tight')
         plt.close()
-        print("Gráficos guardados en: graficos_dinamica_tp5.png")
+        print("\nGráficos guardados en: graficos_dinamica_tp5.png")
 
 
 def generar_informe2(datos_experimentales):
@@ -692,12 +569,7 @@ def guardar_resultados_dinamica(resultados, solucionador):
 
 
 def analizar_desviaciones(solucionador):
-    """
-    Analiza posibles causas de desviaciones entre modelo y datos experimentales.
-    
-    Inciso d) Comparar soluciones numéricas con datos experimentales del TP4.
-    Analizar posibles causas de desviaciones y estimar importancia relativa.
-    """
+
     print("\n" + "=" * 50)
     print("ANÁLISIS DE DESVIACIONES (Inciso d)")
     print("=" * 50)
@@ -706,17 +578,15 @@ def analizar_desviaciones(solucionador):
         print("No hay resultados de RK5-6 para analizar.")
         return
 
-    # Usar RK5-6 como referencia (mejor precisión numérica)
+    # Usar RK5-6 como referencia.
     datos_rk = solucionador.resultados['rk56']
     alturas_modelo = np.interp(solucionador.tiempos_exp, datos_rk['tiempos'], datos_rk['alturas'])
     alturas_exp = solucionador.alturas_exp
-    
-    # Calcular desviaciones
+
     desviaciones = alturas_modelo - alturas_exp
     desviaciones_um = desviaciones * 1e6
     desviaciones_abs = np.abs(desviaciones)
-    
-    # Estadísticas globales
+
     desv_promedio = np.mean(desviaciones_abs) * 1e6
     desv_std = np.std(desviaciones_abs) * 1e6
     desv_max = np.max(desviaciones_abs) * 1e6
@@ -731,139 +601,9 @@ def analizar_desviaciones(solucionador):
     print(f"Desviación máxima:       {desv_max:.2f} µm")
     print(f"Error RMS:               {desv_rms:.2f} µm")
     print(f"Altura promedio (exp):   {mean_alt:.2f} µm")
-    
-    # Análisis temporal de desviaciones
-    fase_impacto = solucionador.tiempos_exp < 0.01  # Primeros 10 ms
-    fase_spreading = (solucionador.tiempos_exp >= 0.01) & (solucionador.tiempos_exp < 0.05)
-    fase_equilibrio = solucionador.tiempos_exp >= 0.05
-    
-    if fase_impacto.any():
-        desv_impacto = np.mean(desviaciones_abs[fase_impacto]) * 1e6
-        print(f"\nDesviación fase impacto (t<10ms):    {desv_impacto:.2f} µm")
-    
-    if fase_spreading.any():
-        desv_spreading = np.mean(desviaciones_abs[fase_spreading]) * 1e6
-        print(f"Desviación fase spreading (10-50ms): {desv_spreading:.2f} µm")
-    
-    if fase_equilibrio.any():
-        desv_equilibrio = np.mean(desviaciones_abs[fase_equilibrio]) * 1e6
-        print(f"Desviación fase equilibrio (t>50ms): {desv_equilibrio:.2f} µm")
-    
-    # Análisis de residuos (tendencia sistemática)
-    residuos_positivos = np.sum(desviaciones > 0)
-    residuos_negativos = np.sum(desviaciones < 0)
-    sesgo = np.mean(desviaciones) * 1e6
-    
-    print(f"\n--- ANÁLISIS DE RESIDUOS ---")
-    print(f"Sesgo (bias):            {sesgo:.2f} µm")
-    print(f"Residuos positivos:      {residuos_positivos} ({residuos_positivos/len(desviaciones)*100:.1f}%)")
-    print(f"Residuos negativos:      {residuos_negativos} ({residuos_negativos/len(desviaciones)*100:.1f}%)")
-    if abs(sesgo) > desv_promedio * 0.5:
-        print("  ⚠ Sesgo significativo detectado (modelo subestima o sobreestima sistemáticamente)")
-    else:
-        print("  ✓ Residuos balanceados (sin sesgo sistemático importante)")
-    
-    # Estimación de importancia relativa de causas
-    print("\n--- CAUSAS DE DESVIACIÓN (Importancia estimada) ---")
-    
-    # 1. Simplificación del modelo (EDO lineal vs no lineal)
-    # Evidencia: si hay tendencias sistemáticas en diferentes fases
-    importancia_linealidad = "ALTA" if abs(sesgo) > 10 else "MEDIA" if abs(sesgo) > 5 else "BAJA"
-    print(f"\n1. Simplificación del modelo (EDO lineal vs no lineal real):")
-    print(f"   Importancia: {importancia_linealidad}")
-    print(f"   Justificación:")
-    print(f"   - El modelo asume respuesta lineal: m·y'' + c·y' + k(y-yeq) = 0")
-    print(f"   - La dinámica real incluye efectos no lineales: tensión superficial,")
-    print(f"     viscosidad variable, deformación de la gota")
-    print(f"   - Sesgo detectado: {sesgo:.2f} µm → {'significativo' if abs(sesgo) > 5 else 'leve'}")
-    
-    # 2. Parámetros constantes k y c
-    # Evidencia: variación de error en diferentes fases
-    var_temporal = 0
-    if fase_impacto.any() and fase_equilibrio.any():
-        var_temporal = abs(desv_impacto - desv_equilibrio) if 'desv_impacto' in locals() and 'desv_equilibrio' in locals() else 0
-    importancia_parametros = "ALTA" if var_temporal > 20 else "MEDIA" if var_temporal > 10 else "BAJA"
-    
-    print(f"\n2. Parámetros constantes (k y c deberían variar con el tiempo):")
-    print(f"   Importancia: {importancia_parametros}")
-    print(f"   Justificación:")
-    print(f"   - Modelo: k = {solucionador.k:.2f} N/m, c = {solucionador.c:.6f} Ns/m (constantes)")
-    print(f"   - Real: k y c varían con la deformación, velocidad y geometría")
-    print(f"   - Variación temporal del error: {var_temporal:.2f} µm")
-    
-    # 3. Efectos de tensión superficial
-    importancia_tension = "ALTA"
-    print(f"\n3. Efectos de tensión superficial no modelados:")
-    print(f"   Importancia: {importancia_tension}")
-    print(f"   Justificación:")
-    print(f"   - Tensión superficial γ ≈ 0.072 N/m (agua) domina dinámica a escala µm")
-    print(f"   - Fuerza capilar F_cap ~ γ·L ~ 0.072 × 800×10⁻⁶ ≈ 5.8×10⁻⁵ N")
-    print(f"   - Fuerza inercial F_iner ~ m·g ~ 4×10⁻⁸ × 10 ≈ 4×10⁻⁷ N")
-    print(f"   - Ratio F_cap/F_iner ≈ {5.8e-5/4e-7:.0f} → tensión superficial es dominante")
-    
-    # 4. Partícula puntual vs gota deformable
-    importancia_deformacion = "ALTA"
-    print(f"\n4. Suposición de partícula puntual vs gota deformable:")
-    print(f"   Importancia: {importancia_deformacion}")
-    print(f"   Justificación:")
-    print(f"   - Modelo: centro de masa como partícula puntual")
-    print(f"   - Real: gota cambia de forma (esférica → achatada → oscilación)")
-    print(f"   - Durante spreading, la altura del centroide no representa bien")
-    print(f"     la dinámica completa de la deformación")
-    
-    # 5. Ruido experimental
-    # Estimar de la variabilidad de alto frecuencia
-    if len(alturas_exp) > 3:
-        variacion_local = np.std(np.diff(alturas_exp)) * 1e6
-    else:
-        variacion_local = 0
-    importancia_ruido = "MEDIA" if variacion_local > 5 else "BAJA"
-    
-    print(f"\n5. Ruido en mediciones experimentales:")
-    print(f"   Importancia: {importancia_ruido}")
-    print(f"   Justificación:")
-    print(f"   - Variación frame-a-frame: {variacion_local:.2f} µm")
-    print(f"   - Ruido típico en procesamiento de imágenes: ±5-10 µm")
-    print(f"   - Contribución al error total: ~{min(variacion_local/desv_promedio*100, 100):.0f}%")
-    
-    # 6. Condiciones iniciales
-    if len(alturas_exp) > 0:
-        error_inicial = abs(alturas_modelo[0] - alturas_exp[0]) * 1e6
-    else:
-        error_inicial = 0
-    importancia_ci = "MEDIA" if error_inicial > 10 else "BAJA"
-    
-    print(f"\n6. Condiciones iniciales aproximadas:")
-    print(f"   Importancia: {importancia_ci}")
-    print(f"   Justificación:")
-    print(f"   - Error en t=0: {error_inicial:.2f} µm")
-    print(f"   - Velocidad inicial estimada por diferencias finitas")
-    print(f"   - Propagación del error inicial decae con amortiguamiento")
-    
-    # Resumen cuantitativo
-    print("\n--- RESUMEN DE IMPORTANCIA RELATIVA ---")
-    causas = [
-        ("Tensión superficial no modelada", importancia_tension, "40%"),
-        ("Gota deformable vs partícula puntual", importancia_deformacion, "30%"),
-        ("Parámetros k, c variables vs constantes", importancia_parametros, "15%"),
-        ("Linealización del modelo", importancia_linealidad, "10%"),
-        ("Ruido experimental", importancia_ruido, "3%"),
-        ("Condiciones iniciales", importancia_ci, "2%")
-    ]
-    
-    print("\nContribución estimada al error total:")
-    for i, (causa, imp, porc) in enumerate(causas, 1):
-        print(f"{i}. {causa:45} {imp:6} ({porc})")
-    
-    print("\n--- RECOMENDACIONES ---")
-    print("Para mejorar el modelo:")
-    print("  1. Incluir término de tensión superficial: F_surf = γ·κ (curvatura)")
-    print("  2. Usar modelo de gota deformable (ecuaciones de Navier-Stokes)")
-    print("  3. Permitir k(t) y c(t) variables según deformación")
-    print("  4. Agregar términos no lineales en fuerzas de contacto")
+
     print(f"\nPrecisión actual del modelo: {100 - desv_rel:.1f}% (error relativo {desv_rel:.2f}%)")
     print("Este nivel de precisión es razonable para un modelo simplificado.")
-
 
 if __name__ == "__main__":
     try:
