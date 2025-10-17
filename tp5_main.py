@@ -4,13 +4,9 @@ from tp5_ejercicio1 import generar_informe1
 from tp5_ejercicio2 import generar_informe2
 
 def cargar_datos_tp4():
-    """Carga y unifica los datos del TP4"""
     print("=== CARGANDO DATOS DEL TP4 ===")
 
-    archivos_requeridos = [
-        "resultados_completos.xlsx",
-        "resultados_completos2.xlsx",
-        "resultados_completos3.xlsx"
+    archivos_requeridos = ["resultados_completos.xlsx", "resultados_completos2.xlsx", "resultados_completos3.xlsx"
     ]
 
     for archivo in archivos_requeridos:
@@ -34,7 +30,6 @@ def cargar_datos_tp4():
     return df_unificado
 
 if __name__ == "__main__":
-    """Función principal del TP5"""
     print("\n" + "=" * 60)
     print("TRABAJO PRÁCTICO 5 - ANÁLISIS NUMÉRICO")
     print("=" * 60)

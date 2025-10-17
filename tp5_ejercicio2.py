@@ -8,10 +8,7 @@ from tp5_exportar_excel import exportar_ejercicio2_excel
 
 warnings.filterwarnings('ignore')
 
-
 class SolucionadorEDOGota:
-    """Clase para resolver la EDO de la dinámica de la gota"""
-
     def __init__(self, datos_experimentales):
         self.datos_exp = datos_experimentales
         self.tiempos_exp = datos_experimentales['Tiempo (s)'].astype(float).values
@@ -42,9 +39,9 @@ class SolucionadorEDOGota:
                     nans = ~mask
                     alt_raw[nans] = np.interp(np.flatnonzero(nans), np.flatnonzero(mask), alt_raw[mask])
 
-        self.alturas_exp = alt_raw * 1e-6  # Convertir µm -> m
+        self.alturas_exp = alt_raw * 1e-6
 
-        # Parámetros del modelo-
+        # Parámetros del modelo.
         self.m = 1e-6  # masa estimada [kg].
         self.k = 10.0  # rigidez inicial [N/m].
         self.c = 0.1  # amortiguamiento inicial [Ns/m].
@@ -66,7 +63,6 @@ class SolucionadorEDOGota:
         self.resultados = {}
 
     def estimar_parametros_iniciales(self):
-        """Estima parámetros iniciales basados en datos experimentales"""
         densidad_agua = 1000  # [kg/m³]
         try:
             df_volumen = pd.read_excel('resultados_tp5_volumen_area.xlsx')
@@ -110,7 +106,6 @@ class SolucionadorEDOGota:
         print(f"  Altura equilibrio (yeq): {self.yeq:.6e} m")
 
     def edo_gota(self, t, y):
-        """Define la EDO: m·y'' + c·y' + k·(y - yeq) = 0"""
         dydt = np.array([y[1],
                          (-self.c * y[1] - self.k * (y[0] - self.yeq)) / self.m])
         return dydt
@@ -179,11 +174,7 @@ class SolucionadorEDOGota:
 
         start_time = time.time()
 
-        solucion = solve_ivp(self.edo_gota, t_span, y0,
-                             method='DOP853',
-                             rtol=tol,
-                             atol=tol / 100,
-                             dense_output=True)
+        solucion = solve_ivp(self.edo_gota, t_span, y0, method='DOP853', rtol=tol, atol=tol / 100, dense_output=True)
 
         coste_tiempo = time.time() - start_time
 
@@ -295,7 +286,6 @@ class SolucionadorEDOGota:
         return t_values, y_values
 
     def ajustar_parametros_modelo(self):
-        """Ajusta k y c para minimizar error con datos experimentales (búsqueda en grilla simple)"""
         print("\nAjustando parámetros k y c...")
 
         def error_modelo(params):
@@ -340,7 +330,6 @@ class SolucionadorEDOGota:
         return mejores_params
 
     def comparar_metodos(self):
-        """Compara los tres métodos numéricos"""
         print("\n" + "=" * 50)
         print("COMPARACIÓN DE MÉTODOS NUMÉRICOS")
         print("=" * 50)
@@ -358,14 +347,8 @@ class SolucionadorEDOGota:
 
         print("\nEjecutando métodos...")
 
-        # Taylor orden 3 con tolerancia muy estricta para error ~24 µm
-        # Reducida a 3e-9 para igualar precisión de RK5-6 y Adams
         t_taylor, y_taylor = self.metodo_taylor_orden3(t_span, y0, tol=3e-9)
-
-        # Runge-Kutta 5-6 (tolerancia 0.01 µm - referencia de alta precisión)
         t_rk, y_rk = self.metodo_runge_kutta_56(t_span, y0, tol=1e-8)
-
-        # Adams-Bashforth-Moulton con tolerancia ajustada para error ~25 µm
         t_adams, y_adams = self.metodo_adams_bashforth_moulton(t_span, y0, tol=2e-8)
 
         errores = {}
@@ -409,7 +392,6 @@ class SolucionadorEDOGota:
         return self.resultados, errores
 
     def generar_graficos_comparativos(self):
-        """Genera gráficos comparativos"""
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
         # Gráfico 1: Altura vs Tiempo
@@ -461,9 +443,7 @@ class SolucionadorEDOGota:
         # Gráfico 4: Evaluaciones acumuladas vs Tiempo (NUEVO)
         ax = axes[1, 1]
         
-        for metodo, style, label in zip(['taylor', 'rk56', 'adams'],
-                                        ['r-', 'b--', 'g-.'],
-                                        ['Taylor Orden 3', 'RK5-6', 'Adams-B-M']):
+        for metodo, style, label in zip(['taylor', 'rk56', 'adams'], ['r-', 'b--', 'g-.'], ['Taylor Orden 3', 'RK5-6', 'Adams-B-M']):
             if metodo in self.resultados:
                 datos = self.resultados[metodo]
                 tiempos = datos['tiempos']
@@ -497,7 +477,6 @@ class SolucionadorEDOGota:
 
 
 def generar_informe2(datos_experimentales):
-    """Función principal del Ejercicio 2"""
     print("=== EJERCICIO 2 TP5 - MODELO DE DINÁMICA DE GOTA ===")
 
     try:
@@ -517,7 +496,6 @@ def generar_informe2(datos_experimentales):
 
 
 def guardar_resultados_dinamica(resultados, solucionador):
-    """Guarda resultados en Excel"""
     try:
         with pd.ExcelWriter('resultados_tp5_dinamica.xlsx') as writer:
             if 'taylor' in resultados:
@@ -578,7 +556,6 @@ def analizar_desviaciones(solucionador):
         print("No hay resultados de RK5-6 para analizar.")
         return
 
-    # Usar RK5-6 como referencia.
     datos_rk = solucionador.resultados['rk56']
     alturas_modelo = np.interp(solucionador.tiempos_exp, datos_rk['tiempos'], datos_rk['alturas'])
     alturas_exp = solucionador.alturas_exp
@@ -605,9 +582,3 @@ def analizar_desviaciones(solucionador):
     print(f"\nPrecisión actual del modelo: {100 - desv_rel:.1f}% (error relativo {desv_rel:.2f}%)")
     print("Este nivel de precisión es razonable para un modelo simplificado.")
 
-if __name__ == "__main__":
-    try:
-        datos = pd.read_excel('resultados_completos.xlsx', sheet_name='Datos Completos')
-        generar_informe2(datos)
-    except Exception as e:
-        print(f"Error: {e}")

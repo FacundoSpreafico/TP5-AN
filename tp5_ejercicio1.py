@@ -12,13 +12,7 @@ from tp5_exportar_excel import exportar_ejercicio1_excel
 warnings.filterwarnings('ignore')
 
 class CalculadorVolumenArea:
-
     def __init__(self, df, scale=1.0, n_puntos=50, suavizado=0.5):
-        """
-        df: DataFrame con columnas ['Imagen', 'Tiempo (s)', 'Contorno_x', 'Contorno_y']
-        scale: factor de conversión (mm/px o m/px)
-        n_puntos: número de puntos para la integración
-        """
         self.df = df
         self.scale = scale
         self.n_puntos = n_puntos
@@ -26,10 +20,6 @@ class CalculadorVolumenArea:
         self.resultados = []
 
     def obtener_mitad_contorno(self, contorno_x, contorno_y):
-        """
-        Divide el contorno en mitades usando el ápice (punto más bajo) y
-        devuelve (r, y) donde r = |x - x_apice|.
-        """
         if len(contorno_y) == 0:
             return None, None
 
@@ -55,7 +45,6 @@ class CalculadorVolumenArea:
         return r_ord, y_ord
 
     def ajustar_spline(self, r, y):
-        """Ajuste PCHIP de r(y)."""
         if r is None or y is None or len(y) < 4:
             return None
         idx = np.argsort(y)
@@ -71,10 +60,6 @@ class CalculadorVolumenArea:
             return None
 
     def ajustar_polinomio(self, r, y, grado=3):
-        """
-        Ajusta r(y) con polinomio (sobre y normalizado) y devuelve f(yy)=r.
-        NOTA: la derivada se calcula con la misma receta (Savitzky–Golay), no analítica.
-        """
         if r is None or y is None or len(y) <= grado + 1:
             return None
         idx = np.argsort(y)
@@ -92,7 +77,6 @@ class CalculadorVolumenArea:
             return None
 
     def _eval_seguro(self, funcion, y_eval):
-        """Evalúa la función en radios r, clamp a [0,∞) y reemplaza NaN/Inf por 0."""
         r = funcion(y_eval)
         r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
         return np.maximum(r, 0.0)
@@ -114,7 +98,7 @@ class CalculadorVolumenArea:
         volumen = simpson(integrando, y_eval)
         return volumen, 0.0
 
-    # ---------------------- ÁREA: pipeline homogénea ----------------------
+    # ---------------------- ÁREA ----------------------
     def _area_con_pipeline_unica(self, funcion, y_min, y_max, n_puntos=50, usar_simpson=False):
         y_eval = np.linspace(y_min, y_max, n_puntos)
         r = self._eval_seguro(funcion, y_eval)
@@ -138,13 +122,11 @@ class CalculadorVolumenArea:
 
     # ---------------------- CÁLCULO DE ERRORES RELATIVOS ----------------------
     def calcular_errores_relativos(self, df_resultados):
-        """Calcula y muestra errores relativos entre métodos de integración"""
         print("\n" + "=" * 60)
         print("ESTADÍSTICAS DE ERRORES RELATIVOS (%)")
         print("=" * 60)
 
         def error_relativo(a, b):
-            """Calcula error relativo porcentual entre dos valores"""
             if np.isnan(a) or np.isnan(b) or (a == 0 and b == 0):
                 return np.nan
             denom = (abs(a) + abs(b)) / 2.0
@@ -241,17 +223,12 @@ class CalculadorVolumenArea:
 
     # ---------------------- GRÁFICAS DE EVOLUCIÓN ----------------------
     def generar_graficas_evolucion(self, df_resultados):
-        """Genera gráficas de evolución del volumen y área en función del frame"""
         print("\nGenerando gráficas de evolución...")
 
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 
-        df_valido = df_resultados.dropna(subset=[
-            'Volumen_spline_trapecio', 'Volumen_spline_simpson',
-            'Volumen_poly_trapecio', 'Volumen_poly_simpson',
-            'Area_spline_trapecio', 'Area_spline_simpson',
-            'Area_poly_trapecio', 'Area_poly_simpson'
-        ])
+        df_valido = df_resultados.dropna(subset=['Volumen_spline_trapecio', 'Volumen_spline_simpson', 'Volumen_poly_trapecio', 'Volumen_poly_simpson',
+            'Area_spline_trapecio', 'Area_spline_simpson', 'Area_poly_trapecio', 'Area_poly_simpson'])
 
         if len(df_valido) == 0:
             print("No hay datos válidos para generar gráficas")

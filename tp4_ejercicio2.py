@@ -378,29 +378,15 @@ def graficar_resultados(df_angulos):
 
 
 def _bloque_final_consecutivo(df, img_col: str):
-    """Devuelve el último bloque consecutivo por número de imagen."""
     df = df.sort_values(img_col)
     grupos = (df[img_col].diff().ne(1)).cumsum()
     bloques = df.groupby(grupos)
     return bloques.get_group(bloques.ngroups)
 
 
-def calcular_promedio_estatico(
-    df_angulos: pd.DataFrame,
-    img_col: str = 'Imagen_num',
-    tipo_col: str = 'Tipo_angulo',          # 'Estático' / 'Dinámico'
-    est_col: str = 'Centroide_estable',
-    angL_col: str = 'Angulo_izq',
-    angR_col: str = 'Angulo_der',
-    rango: tuple | None = (28, 126),
-    modo: str = 'todos_estaticos'
-):
-    """
-    Promedia SOLO frames estáticos (Tipo_angulo=='Estático') y excluye cualquier dinámico en todo el rango.
-    - rango: (ini, fin) o None para usar toda la serie
-    - modo='todos_estaticos': todos los estáticos del rango
-    - modo='final': último bloque consecutivo con Centroide_estable=True dentro del rango
-    """
+def calcular_promedio_estatico(df_angulos: pd.DataFrame, img_col: str = 'Imagen_num', tipo_col: str = 'Tipo_angulo', est_col: str = 'Centroide_estable',
+    angL_col: str = 'Angulo_izq', angR_col: str = 'Angulo_der', rango: tuple | None = (28, 126), modo: str = 'todos_estaticos'):
+
     df = df_angulos.copy()
 
     if rango is not None and img_col in df.columns:
@@ -424,11 +410,32 @@ def calcular_promedio_estatico(
     min_f = int(df[img_col].min()) if n and img_col in df.columns else None
     max_f = int(df[img_col].max()) if n and img_col in df.columns else None
 
-    return {
-        'n': n, 'L_mu': L_mu, 'L_sd': L_sd, 'R_mu': R_mu, 'R_sd': R_sd,
-        'min_frame': min_f, 'max_frame': max_f, 'modo': modo, 'rango': rango
-    }, df
+    return {'n': n, 'L_mu': L_mu, 'L_sd': L_sd, 'R_mu': R_mu, 'R_sd': R_sd,'min_frame': min_f, 'max_frame': max_f, 'modo': modo, 'rango': rango}, df
 
+
+def calcular_promedio_dinamico(df_angulos, img_col: str = 'Imagen_num', tipo_col: str = 'Tipo_angulo',
+                               angL_col: str = 'Angulo_izq', angR_col: str = 'Angulo_der',
+                               rango: tuple | None = (28, 126)):
+    df = df_angulos.copy()
+    if rango is not None and img_col in df.columns:
+        ini, fin = rango
+        df = df[(df[img_col] >= ini) & (df[img_col] <= fin)]
+
+    if tipo_col in df.columns:
+        mask_dyn = df[tipo_col].astype(str).str.lower().eq('dinámico') | df[tipo_col].astype(str).str.lower().eq(
+            'dinamico')
+        df = df[mask_dyn]
+
+    n = int(len(df))
+    L_mu = float(df[angL_col].mean()) if n else float('nan')
+    L_sd = float(df[angL_col].std(ddof=1)) if n > 1 else 0.0
+    R_mu = float(df[angR_col].mean()) if n else float('nan')
+    R_sd = float(df[angR_col].std(ddof=1)) if n > 1 else 0.0
+    min_f = int(df[img_col].min()) if n and img_col in df.columns else None
+    max_f = int(df[img_col].max()) if n and img_col in df.columns else None
+
+    return {'n': n, 'L_mu': L_mu, 'L_sd': L_sd, 'R_mu': R_mu, 'R_sd': R_sd, 'min_frame': min_f, 'max_frame': max_f,
+            'rango': rango}, df
 
 def generar_informe2():
     print("\n\n=== EJERCICIO 2: Análisis de ángulos de contacto ===")
@@ -443,14 +450,7 @@ def generar_informe2():
 
         df_ajustes = ajustar_contornos(df, grado_polinomio=3, suavizado_spline=1.0)
 
-        df_angulos = calcular_angulo_contacto(
-            df_ajustes,
-            altura_contacto=50,
-            tol_centroide_um=1.0,
-            tail_frames=12,
-            min_frames_estaticos=5,
-            min_frame_estatico=28
-        )
+        df_angulos = calcular_angulo_contacto(df_ajustes, altura_contacto=50, tol_centroide_um=1.0, tail_frames=12, min_frames_estaticos=5, min_frame_estatico=28)
 
         exportar_ejercicio2_excel(df_angulos, 'resultados_completos2.xlsx')
         graficar_resultados(df_angulos)
@@ -463,35 +463,6 @@ def generar_informe2():
             print(f"Derecho:   μ = {r_all['R_mu']:.1f}°")
             if r_all['min_frame'] is not None:
                 print(f"Frames usados: [{r_all['min_frame']}..{r_all['max_frame']}]")
-
-            def calcular_promedio_dinamico(df_angulos, img_col: str = 'Imagen_num', tipo_col: str = 'Tipo_angulo',
-                                          angL_col: str = 'Angulo_izq', angR_col: str = 'Angulo_der',
-                                          rango: tuple | None = (28, 126)):
-                """
-                Promedia SOLO frames dinámicos (Tipo_angulo=='Dinámico') dentro de un rango dado.
-                Devuelve la misma estructura que `calcular_promedio_estatico`.
-                """
-                df = df_angulos.copy()
-                if rango is not None and img_col in df.columns:
-                    ini, fin = rango
-                    df = df[(df[img_col] >= ini) & (df[img_col] <= fin)]
-
-                if tipo_col in df.columns:
-                    mask_dyn = df[tipo_col].astype(str).str.lower().eq('dinámico') | df[tipo_col].astype(str).str.lower().eq('dinamico')
-                    df = df[mask_dyn]
-
-                n = int(len(df))
-                L_mu = float(df[angL_col].mean()) if n else float('nan')
-                L_sd = float(df[angL_col].std(ddof=1)) if n > 1 else 0.0
-                R_mu = float(df[angR_col].mean()) if n else float('nan')
-                R_sd = float(df[angR_col].std(ddof=1)) if n > 1 else 0.0
-                min_f = int(df[img_col].min()) if n and img_col in df.columns else None
-                max_f = int(df[img_col].max()) if n and img_col in df.columns else None
-
-                return {
-                    'n': n, 'L_mu': L_mu, 'L_sd': L_sd, 'R_mu': R_mu, 'R_sd': R_sd,
-                    'min_frame': min_f, 'max_frame': max_f, 'rango': rango
-                }, df
 
             r_dyn, _ = calcular_promedio_dinamico(df_angulos, rango=(0,126))
             print("\n====== Resumen dinámico (todos los DINÁMICOS en 0–126) ======")
